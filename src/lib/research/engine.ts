@@ -281,36 +281,41 @@ export async function getLedger(symbol: string, quarters = 6): Promise<Ledger> {
 
 /* ---------- retrieval and questions ---------- */
 
-/** Parsing continues in the background and is cached, so asking again can succeed. */
-const within = <T,>(work: Promise<T>, ms: number, fallback: T): Promise<T> =>
-  Promise.race([work, new Promise<T>((res) => setTimeout(() => res(fallback), ms))]);
-
 // A cold server can need longer than this for a large annual report; answer from what is ready instead of failing.
 const CORPUS_BUDGET_MS = 40000;
 
-// Annual reports are the slow download (often over 20s, transcripts about 1s). A question waits this long for one if transcripts are ready.
-const ASK_AR_WAIT_MS = 8000;
+// One slow document, usually the annual report, can take over 20s when the rest take about 1s. A question waits this long once a transcript is ready.
+const ASK_DOC_WAIT_MS = 8000;
 const LATE_DOC = "Not read in time; ask again to retry";
 
 /**
- * Transcripts get the full budget. Reports get arWaitMs when a transcript was readable, and the full budget when
- * none was, because then there is nothing else to answer from. Late documents keep loading into the cache.
+ * Returns when every document is read, at budgetMs, or at waitMs if a transcript is readable by then. With no
+ * transcript there is nothing to answer from, so the budget applies. Late documents keep loading into the cache.
  */
-export async function gatherDocs<R extends { pages: string[] }>(transcripts: Promise<R>[], reports: Promise<R>[], late: (position: number) => R, budgetMs: number, arWaitMs?: number): Promise<R[]> {
+export async function gatherDocs<R extends { pages: string[] }>(transcripts: Promise<R>[], reports: Promise<R>[], late: (position: number) => R, budgetMs: number, waitMs?: number): Promise<R[]> {
   const started = Date.now();
-  const left = () => Math.max(1000, budgetMs - (Date.now() - started));
-  const tr = await Promise.all(transcripts.map((p, i) => within(p, left(), late(i))));
-  const arMs = arWaitMs != null && tr.some((d) => d.pages.length) ? Math.max(0, arWaitMs - (Date.now() - started)) : left();
-  return [...tr, ...(await Promise.all(reports.map((p, i) => within(p, arMs, late(tr.length + i)))))];
+  const jobs = [...transcripts, ...reports];
+  const out = jobs.map((_, i) => late(i));
+  const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
+  let transcriptReady!: () => void;
+  const haveTranscript = new Promise<void>((res) => { transcriptReady = res; });
+  const all = Promise.all(jobs.map(async (p, i) => {
+    out[i] = await p;
+    if (i < transcripts.length && out[i].pages.length) transcriptReady();
+  }));
+  const gates = [all as Promise<unknown>, sleep(budgetMs)];
+  if (waitMs != null) gates.push(haveTranscript.then(() => sleep(Math.max(0, waitMs - (Date.now() - started)))));
+  await Promise.race(gates);
+  return [...out];
 }
 
-async function corpus(symbol: string, opts: { transcripts?: number; ar?: boolean; arWaitMs?: number } = {}) {
+async function corpus(symbol: string, opts: { transcripts?: number; ar?: boolean; waitMs?: number } = {}) {
   const { docs } = await timed("discovery", () => getDocuments(symbol));
   const tr = docs.filter((d) => d.kind === "transcript").slice(0, opts.transcripts ?? 4);
   const ar = opts.ar === false ? [] : docs.filter((d) => d.kind === "annual_report").slice(0, 1);
   const list = [...tr, ...ar];
   const late = (i: number) => ({ d: list[i], pages: [] as string[], pageCount: 0, scanned: false, error: LATE_DOC });
-  return gatherDocs<Awaited<ReturnType<typeof readOne>>>(tr.map(readOne), ar.map(readOne), late, CORPUS_BUDGET_MS, opts.arWaitMs);
+  return gatherDocs<Awaited<ReturnType<typeof readOne>>>(tr.map(readOne), ar.map(readOne), late, CORPUS_BUDGET_MS, opts.waitMs);
 
   async function readOne(d: ResearchDoc): Promise<{ d: ResearchDoc; pages: string[]; pageCount: number; scanned: boolean; error?: string }> {
     try {
@@ -414,13 +419,13 @@ export async function warmDocuments(symbol: string): Promise<void> {
 export async function ask(symbol: string, question: string, previous?: string): Promise<Answer> {
   let docs: Awaited<ReturnType<typeof corpus>>;
   try {
-    docs = await timed("corpus", () => corpus(symbol, { arWaitMs: ASK_AR_WAIT_MS }));
+    docs = await timed("corpus", () => corpus(symbol, { waitMs: ASK_DOC_WAIT_MS }));
   } catch (e) {
     return { mode: "abstain", answer: [e instanceof Error ? e.message : "Documents could not be found."], citations: [], coverage: [] };
   }
   const answer = await answerFrom(docs, symbol, question, previous);
-  const pending = docs.some((d) => d.d.kind === "annual_report" && "error" in d && d.error === LATE_DOC);
-  return pending ? { ...answer, note: "The annual report is still loading, so this answer does not draw on it. Ask again shortly to include it." } : answer;
+  const pending = docs.filter((d) => d.error === LATE_DOC).map((d) => (d.d.kind === "transcript" ? `${d.d.label} call` : `${d.d.label} annual report`));
+  return pending.length ? { ...answer, note: `Still loading, so not used here: ${pending.join(", ")}. Ask again shortly to include it.` } : answer;
 }
 
 async function answerFrom(docs: Awaited<ReturnType<typeof corpus>>, symbol: string, question: string, previous?: string): Promise<Answer> {

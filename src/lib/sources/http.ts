@@ -1,3 +1,4 @@
+import { getCache } from "@vercel/functions";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -49,6 +50,43 @@ function readDisk<T>(key: string): { at: number; value: T } | null {
   }
 }
 
+export interface RemoteStore {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown, options: { ttl: number }): Promise<void>;
+}
+
+// Memory and /tmp belong to one server instance. This is shared between instances, and survives deployments, so
+// keys carry the deployment id: a fixed parser must never read what the old one stored. Evictable and optional.
+let remote: RemoteStore | null = process.env.VERCEL && process.env.VERCEL_DEPLOYMENT_ID ? getCache({ namespace: `finn-${process.env.VERCEL_DEPLOYMENT_ID}` }) : null;
+export const setRemoteStore = (s: RemoteStore | null) => { remote = s; };
+
+const REMOTE_MIN_TTL_MS = 3600e3; // short-lived data such as prices is not worth a network read
+const REMOTE_MAX_CHARS = 1_900_000; // the platform refuses items over 2 MB
+const REMOTE_READ_MS = 1500;
+const REMOTE_WRITE_MS = 3000;
+
+async function readRemote<T>(key: string): Promise<{ at: number; value: T } | null> {
+  if (!remote) return null;
+  try {
+    const raw = await Promise.race([remote.get(key), new Promise<null>((res) => setTimeout(() => res(null), REMOTE_READ_MS))]);
+    return typeof raw === "string" ? JSON.parse(gunzipSync(Buffer.from(raw, "base64")).toString("utf8")) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeRemote(key: string, entry: { at: number; value: unknown }, ttlMs: number) {
+  if (!remote) return;
+  try {
+    const raw = gzipSync(JSON.stringify(entry)).toString("base64");
+    if (raw.length > REMOTE_MAX_CHARS) return;
+    // Kept past its TTL only so a source outage can serve it, marked stale.
+    await Promise.race([remote.set(key, raw, { ttl: Math.ceil((ttlMs * 2) / 1000) }), new Promise((res) => setTimeout(res, REMOTE_WRITE_MS))]);
+  } catch {
+    // Only costs the next instance a download.
+  }
+}
+
 export interface Cached<T> {
   value: T;
   fetchedAt: string;
@@ -59,11 +97,15 @@ export interface Cached<T> {
 const inflight = new Map<string, Promise<unknown>>();
 
 /**
- * Read-through cache: memory, then disk, then source. On a source failure, serves the last good value
+ * Read-through cache: memory, then disk, then the shared store, then source. On a source failure, serves the last good value
  * marked stale rather than failing, and never pretends it is fresh.
  */
 export async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<Cached<T>> {
-  const hit = (mem.get(key) as { at: number; value: T } | undefined) ?? readDisk<T>(key);
+  let hit = (mem.get(key) as { at: number; value: T } | undefined) ?? readDisk<T>(key);
+  if ((!hit || Date.now() - hit.at >= ttlMs) && ttlMs >= REMOTE_MIN_TTL_MS) {
+    const shared = await readRemote<T>(key);
+    if (shared && (!hit || shared.at > hit.at)) hit = shared;
+  }
   if (hit && Date.now() - hit.at < ttlMs) {
     mem.set(key, hit);
     return { value: hit.value, fetchedAt: new Date(hit.at).toISOString(), mode: "cache", stale: false };
@@ -71,7 +113,13 @@ export async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>
   try {
     let p = inflight.get(key) as Promise<T> | undefined;
     if (!p) {
-      p = fn().finally(() => inflight.delete(key));
+      // The shared write is part of the work, so backgroundWork keeps the function alive until it lands.
+      p = fn()
+        .then(async (v) => {
+          if (ttlMs >= REMOTE_MIN_TTL_MS) await writeRemote(key, { at: Date.now(), value: v }, ttlMs);
+          return v;
+        })
+        .finally(() => inflight.delete(key));
       inflight.set(key, p);
     }
     const value = await p;

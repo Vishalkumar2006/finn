@@ -37,7 +37,7 @@ src/lib/domain     pure logic: metrics, classification, guidance, retrieval. Ful
 src/lib/research   the pipeline: resolve → find documents → extract → validate → compute → cite
 src/lib/feed.ts    live data with cache and snapshot fallback; every payload carries its provenance
 src/app            mobile-first UI and API routes
-scripts/ingest.ts  scheduled job, run by .github/workflows/ingest.yml
+scripts/ingest.ts  manual snapshot refresh
 ```
 
 **Numbers are never produced by a model.** They come from XBRL tags and are computed in `domain/metrics.ts`. Periods are matched by date, so a YoY can't use the wrong quarter, and mixing bases or period types throws.
@@ -50,6 +50,7 @@ scripts/ingest.ts  scheduled job, run by .github/workflows/ingest.yml
 
 ## Limitations
 
+- There is no unattended monitoring. Data is pulled and thresholds are checked when a page is opened; snapshots are refreshed by hand with `npm run ingest`.
 - Alerts appear in the app only, and rules and read state stay on one device. There are no phone or email notifications.
 - Guidance extraction is rule-based and conservative, so most statements end up as "can't test". Few verdicts are given, and those are favoured to be right.
 - Scanned PDFs have no OCR. Some companies file only a link notice instead of a transcript; these are listed as skipped.

@@ -37,7 +37,7 @@ I used NSE rather than BSE because BSE's API refused automated access, and I did
 
 **Deliberately left out**
 
-Phone and email notifications, user accounts, OCR for scanned PDFs, segment mix, and dedicated balance-sheet views beyond the annual table. Alerts and settings stay on one device. EOD data is never presented as intraday.
+Unattended monitoring, phone and email notifications, user accounts, OCR for scanned PDFs, segment mix, and dedicated balance-sheet views beyond the annual table. Alerts and settings stay on one device. EOD data is never presented as intraday.
 
 **Where I'd take it next**
 

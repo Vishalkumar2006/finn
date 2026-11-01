@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (!q.success) return bad("Thresholds out of range");
   try {
     const quotes = await getQuotes(symbols, { pricePct: q.data.price, volumeMultiple: q.data.volume }, q.data.sessions);
-    return NextResponse.json({ quotes, source: "Yahoo Finance end-of-day (.NS)", scheduledRunAt: marketSnapshot.generatedAt, rule: q.data });
+    return NextResponse.json({ quotes, source: "Yahoo Finance end-of-day (.NS)", snapshotAt: marketSnapshot.generatedAt, rule: q.data });
   } catch (e) {
     return failure(e);
   }

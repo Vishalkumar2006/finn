@@ -5,9 +5,9 @@ import { llmEnabled } from "@/lib/research/llm";
 export function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
-    now: req.headers.get("x-vercel-id") ? "vercel" : "local",
+    host: req.headers.get("x-vercel-id") ? "vercel" : "local",
     llm: llmEnabled(),
-    scheduledRunAt: marketSnapshot.generatedAt,
+    marketSnapshotAt: marketSnapshot.generatedAt,
     researchSeedAt: researchSeed.generatedAt,
   });
 }

@@ -23,7 +23,7 @@ export default function AlertsPage() {
   const symbols = encodeURIComponent(s.symbols.join(","));
   const now = useNow();
   const range = now ? `from=${new Date(now - 7 * 24 * 3600e3).toISOString()}&to=${new Date(now).toISOString()}` : "";
-  const q = useApi<{ quotes: Quote[]; scheduledRunAt: string | null }>(symbols ? `/api/quotes?symbols=${symbols}&price=${s.pricePct}&volume=${s.volumeMultiple}&sessions=5` : null);
+  const q = useApi<{ quotes: Quote[]; snapshotAt: string | null }>(symbols ? `/api/quotes?symbols=${symbols}&price=${s.pricePct}&volume=${s.volumeMultiple}&sessions=5` : null);
   const b = useApi<BriefResponse>(symbols && range ? `/api/brief?symbols=${symbols}&${range}` : null);
   const report = useReportUnread();
 
@@ -114,7 +114,7 @@ export default function AlertsPage() {
         <div className="sect-h"><h2>How this runs</h2></div>
         <p style={{ fontSize: 13.5, marginTop: 8, color: "var(--ink-2)" }}>
           Thresholds are checked on the server when you open this page, using end-of-day prices. They are not intraday.
-          A scheduled job saves fresh data twice each weekday{q.data?.scheduledRunAt ? `; last run ${fmtTime(q.data.scheduledRunAt)} IST` : ""}.
+          Nothing runs unattended: checks happen only when the page is open. If a source is unreachable, FINN uses a saved snapshot, refreshed by hand{q.data?.snapshotAt ? `, last on ${fmtTime(q.data.snapshotAt)} IST` : ""}, and labels it.
           Alerts appear here in the app. There are no phone or email notifications yet, and your rules stay on this device.
         </p>
       </section>

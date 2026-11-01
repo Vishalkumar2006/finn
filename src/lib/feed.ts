@@ -102,7 +102,7 @@ export async function getBrief(symbols: string[], fromIso: string, toIso: string
     raw = marketSnapshot.announcements;
     provenance = {
       source: "NSE corporate announcements", fetchedAt: marketSnapshot.generatedAt ?? new Date(0).toISOString(), mode: "snapshot",
-      note: "NSE is not reachable from this server. Showing genuine filings saved by the last scheduled run.",
+      note: "NSE is not reachable from this server. Showing genuine filings saved at the last manual refresh.",
     };
   }
   const inWindow = raw.filter((a) => want.has(a.symbol) && a.at >= isoIst(fromIso) && a.at <= isoIst(toIso));

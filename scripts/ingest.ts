@@ -1,5 +1,5 @@
 /**
- * The scheduled job (GitHub Actions, see .github/workflows/ingest.yml), also runnable by hand with `npm run ingest`.
+ * Manual snapshot refresh: `npm run ingest`, then commit data/snapshot and redeploy.
  * Writes timestamped snapshots of genuine data. A source that fails keeps its previous copy; nothing is synthesised.
  * Transcript text is not stored, only extracted claims with their citation.
  */

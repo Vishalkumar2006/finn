@@ -1,6 +1,6 @@
 # Build state
 
-Last updated 1 Nov 2026.
+Last updated 2 Nov 2026.
 
 ## Status
 
@@ -10,6 +10,51 @@ Deployed and public.
 - Repository: https://github.com/Vishalkumar2006/finn
 
 The ENAM email has not been sent.
+
+## Research performance
+
+Functions moved from iad1 (US East) to bom1 (Mumbai) on 2 Nov 2026. Measured on the public URL, one question at a time, at each release's first questions after deployment.
+
+| Scenario | Before (iad1) | After (bom1) | Samples, before / after |
+|---|---|---|---|
+| First question, same four tickers (L&T, KEI, CERA, Polycab), API | median 22.9s, slowest 46.7s | median 8.9s, slowest 13.9s | 4 / 4 |
+| First question, five tickers including Siemens, API | not measured | median 10.4s, slowest 13.9s | 0 / 5 |
+| Page opened, question 12s later, API | not measured | median 4.5s, slowest 11.4s | 0 / 5 |
+| Identical question already answered | not reached across instances: 11.7s to 44s on the first release with this comparison | 0.4s to 0.6s | 5 / 6 |
+| First question through the real page (headless Chrome, 390px and 1280px) | not measured | 6.0s, 9.2s, 17.4s, 20.5s | 0 / 4 |
+
+The "before" repeat figures come from commit b8360bc, which had the old per-instance cache. Same-instance second questions were already about 3s.
+
+Where the time went, cold, before: documents 6 to 41s (nearly all download; one large report blocked the rest), model 2.6 to 11.6s, discovery 1.3 to 1.7s, parsing 0.7 to 1.9s, chunking and BM25 under 40ms. The stage split comes from a local production build; deployments now send a `Server-Timing` header.
+
+What changed:
+
+- **Region:** `vercel.json` sets bom1. This alone took the five-ticker cold median from 14.1s to 10.4s.
+- **Bounded document wait:** once a transcript is readable, a question waits at most 8s for the other documents. Anything later is named on the answer ("Still loading, so not used here") and in "What was searched". With no readable transcript, the 40s budget still applies.
+- **Reading starts on page open:** `?part=warm` returns at once and reads documents in the background. Limited to 12 a minute per client.
+- **Shared cache:** Vercel Runtime Cache sits behind memory and `/tmp`, so instances reuse each other's work. Only entries with TTLs of at least an hour use it.
+- **Oversized PDFs:** refused from `content-length`. Havells' 55 MB report used to be downloaded (33s) and rejected on every question.
+
+Cache rules:
+
+- TTLs are unchanged: parsed PDFs 30 days, document lists 12 hours, checked answers 6 hours.
+- Shared entries are stored for twice their TTL. Past the TTL they are refetched, and served only if the source is down, marked stale as before.
+- Shared keys include the deployment id, so each deployment starts empty and a parser fix can't read old output. Answer keys also include the prompt version, model and passages.
+- The store can evict entries or be paused. Either only costs a download.
+
+Costs:
+
+- Model calls: page-open reading makes none. A repeated question makes none unless its passages changed. A question first answered without the annual report can cost one more call once the report arrives (Polycab, Siemens and L&T did in the benchmark).
+- Runtime Cache: free on Hobby up to 1M read and 200K write units a month, then paused rather than charged, per Vercel's docs. The team's plan and the usage so far could not be read from the CLI; check the Observability tab. On a paid plan it is billed at low per-unit rates.
+
+### Performance limitations
+
+- A first answer can omit the annual report. In the cold benchmark this happened on three of five tickers. The answer says so, and asking again includes it.
+- The real page is slower than the API because its other requests load at the same time. Two of four cold page samples took over 17s.
+- Model latency varies: the same model took 0.6 to 11s, and the fallback model is slower.
+- Annual reports over 40 MB are not read, as before. They are now reported quickly as over the limit.
+- Timings were not re-measured on a physical phone.
+- Each sample is one run, on a small sample. A new deployment starts with an empty cache.
 
 ## LLM research layer
 
@@ -78,13 +123,13 @@ There is no unattended monitoring. The scheduled workflow was removed so no bot 
 
 | Check | Result |
 |---|---|
-| Unit tests, lint, typecheck, build | 125 tests pass; others clean |
+| Unit tests, lint, typecheck, build | 141 tests pass; others clean |
 | Commit identity | All commits `Vishalkumar2006 <vishku2004@gmail.com>`, no AI trailers |
 | Secrets in Git history | Pattern scan found none; no env files, logs or PDFs tracked |
 
 ## Not verified
 
-- A physical phone. Mobile results are Chrome device emulation.
+- Phone timings after the performance work. The app was opened on a physical Android phone before it; mobile results here are Chrome device emulation.
 - The Vercel request-log status query returned no usable data, so the log result above covers error-level entries only.
 - The cause of the first production question timeout was not confirmed. Slow cold-start parsing is the likely cause; it did not recur after the fix.
 - NSE access may vary over time. Today's success does not guarantee it stays open.
@@ -105,5 +150,4 @@ Each scored claim in the snapshot was read in context, but rules can still misfi
 
 ## Remaining before submission
 
-1. Open the app on a real phone.
-2. Review the AI build history and attach it. Copy kept outside the repo in `C:\Users\vishk\Projects\finn-ai-build-history`.
+1. Review the AI build history and attach it. Copy kept outside the repo in `C:\Users\vishk\Projects\finn-ai-build-history`.

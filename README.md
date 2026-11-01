@@ -46,7 +46,7 @@ scripts/ingest.ts  manual snapshot refresh
 
 **Retrieved text is data.** The optional model has no tools and never receives filed numbers or verdicts. It sees passages inside delimiters with an instruction to ignore anything in them. Each claim it returns is checked against the passages it cites (`domain/answerCheck.ts`). Claims that fail are removed and counted on screen, and if none survive the answer falls back to labelled direct quotes.
 
-**Efficient by default.** One market-wide filings call serves any portfolio. Parsed filings are cached. Search is BM25 over page chunks, with no vector database. The product costs nothing to run without a model.
+**Efficient by default.** One market-wide filings call serves any portfolio. Parsed filings are cached and shared between server instances. Search is BM25 over page chunks, with no vector database. The product costs nothing to run without a model.
 
 ## Limitations
 

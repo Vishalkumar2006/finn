@@ -20,7 +20,7 @@ Functions moved from iad1 (US East) to bom1 (Mumbai) on 2 Nov 2026. Measured on 
 | First question, same four tickers (L&T, KEI, CERA, Polycab), API | median 22.9s, slowest 46.7s | median 8.9s, slowest 13.9s | 4 / 4 |
 | First question, five tickers including Siemens, API | not measured | median 10.4s, slowest 13.9s | 0 / 5 |
 | Page opened, question 12s later, API | not measured | median 4.5s, slowest 11.4s | 0 / 5 |
-| Identical question already answered | not reached across instances: 11.7s to 44s on the first release with this comparison | 0.4s to 0.6s | 5 / 6 |
+| Identical question already answered | not reached across instances: 11.7s to 44s on the first release with this comparison | 0.4s to 0.6s | 5 / 8 |
 | First question through the real page (headless Chrome, 390px and 1280px) | not measured | 6.0s, 9.2s, 17.4s, 20.5s | 0 / 4 |
 
 The "before" repeat figures come from commit b8360bc, which had the old per-instance cache. Same-instance second questions were already about 3s.

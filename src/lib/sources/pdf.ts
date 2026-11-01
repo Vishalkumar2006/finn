@@ -1,0 +1,46 @@
+import { getDocumentProxy } from "unpdf";
+import { cached, get, SourceError } from "./http";
+
+const MAX_BYTES = 40 * 1024 * 1024;
+
+export interface ParsedPdf {
+  url: string;
+  pageCount: number;
+  pages: string[]; // pages[i] is printed-file page i+1, possibly truncated by maxPages
+  scanned: boolean;
+}
+
+async function parse(url: string, maxPages: number): Promise<ParsedPdf> {
+  const r = await get(url, { timeoutMs: 45000, source: new URL(url).host });
+  const buf = await r.arrayBuffer();
+  if (buf.byteLength > MAX_BYTES) throw new SourceError(url, null, "PDF exceeds the 40 MB limit");
+  const head = new TextDecoder().decode(buf.slice(0, 5));
+  if (head !== "%PDF-") throw new SourceError(url, null, "Source did not return a PDF");
+  const pdf = await getDocumentProxy(new Uint8Array(buf), { verbosity: 0 });
+  const pageCount = pdf.numPages;
+  const pages: string[] = [];
+  const limit = Math.min(pageCount, maxPages);
+  for (let i = 1; i <= limit; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    let out = "";
+    let lastY: number | null = null;
+    for (const item of content.items as { str?: string; transform?: number[]; hasEOL?: boolean }[]) {
+      if (typeof item.str !== "string") continue;
+      const y = item.transform?.[5] ?? null;
+      if (lastY != null && y != null && Math.abs(y - lastY) > 2) out += "\n";
+      out += item.str;
+      if (item.hasEOL) out += "\n";
+      if (y != null) lastY = y;
+    }
+    pages.push(out.replace(/[ \t]+/g, " ").trim());
+    page.cleanup();
+  }
+  const chars = pages.reduce((a, p) => a + p.length, 0);
+  return { url, pageCount, pages, scanned: pages.length > 0 && chars / pages.length < 80 };
+}
+
+/** Parsed PDFs are immutable, so they are cached for 30 days and reused by every feature. */
+export async function loadPdf(url: string, maxPages = 400) {
+  return cached(`pdf:${maxPages}:${url}`, 30 * 24 * 3600e3, () => parse(url, maxPages));
+}

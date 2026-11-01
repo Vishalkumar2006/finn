@@ -18,6 +18,7 @@ export function extractProfile(pages: string[]): FiledProfile | null {
       const block = lines.slice(i, i + 12).join(" ").replace(/\s+/g, " ");
       if (!CAREER.test(block) || block.length < 80) continue;
       if (/^(this is|please|we request|kindly|pursuant|the board)/i.test(block)) continue;
+      if (/\b(ind as|in accordance with|master circular|statutory auditor|limited review|regulation \d+)\b/i.test(block)) continue; // legal boilerplate, not a career
       const text = block.length > 600 ? `${block.slice(0, 600).replace(/\s+\S*$/, "")}…` : block;
       return { text, page: p + 1 };
     }

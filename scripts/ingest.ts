@@ -20,7 +20,7 @@ async function main() {
   const prevMarket = read(MARKET, { generatedAt: null, bars: {}, announcements: [] as RawAnnouncement[] });
   const prevResearch = read(RESEARCH, { generatedAt: null, financials: {} as Record<string, Financials>, ledgers: {} as Record<string, Ledger> });
   const portfolio = DEFAULT_PORTFOLIO.map((p) => p.symbol);
-  const all = [...portfolio, ...RESEARCH_PICKS.map((p) => p.symbol)];
+  const all = [...new Set([...portfolio, ...RESEARCH_PICKS.map((p) => p.symbol)])];
 
   const bars: Record<string, unknown> = { ...prevMarket.bars };
   let priceOk = 0;

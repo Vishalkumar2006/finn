@@ -116,7 +116,7 @@ function metricOf(s: string): GuidanceMetric {
   if (/pat\s*margin|net (profit )?margin/.test(t)) return "pat_margin";
   if (/\bcapex\b|capital expenditure/.test(t)) return "capex";
   // A lender's AUM or a manufacturer's volume is not revenue, even in a sentence that also says "top line".
-  if (/\b(aum|assets under|loan book|loan growth|advances|disbursements?|deposits?|volumes?|tonnage|order ?book)\b/.test(t)) return "other";
+  if (/\b(aum|assets under|loan book|loan growth|advances|disbursements?|deposits?|volumes?|tonnage|order ?book|shares?|mix|contribution)\b/.test(t)) return "other";
   if (/(revenue|top ?line|sales).{0,50}(grow|growth|cagr|increase)|(grow|growth|cagr).{0,50}(revenue|top ?line|sales)/.test(t)) return "revenue_growth";
   return "other";
 }

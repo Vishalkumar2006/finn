@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FINN
 
-## Getting Started
+A mobile-first investment agent for Indian listed companies. It tells you what changed across your portfolio, why it matters, and what the primary evidence actually says.
 
-First, run the development server:
+- **Brief**: filings across your holdings, ranked. Material items first, routine ones collapsed but kept. Results show Revenue, EBITDA, PBT and PAT with QoQ and YoY. Appointments show the profile from the filing.
+- **Alerts**: your price and volume thresholds, checked deterministically on end-of-day data, plus the filing types you choose.
+- **Research**: any NSE ticker. The core is **Said vs delivered**: management's statements from transcripts, tested against filed numbers. Every claim opens its source.
+
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm ci
+npm run dev        # http://localhost:3000
+npm test           # unit tests
+npm run build      # production build
+npm run ingest     # refresh data/snapshot from live sources
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Node 22+. No keys needed. To let a model phrase answers, set the variables in `.env.example`; without them, answers are direct quotes and the UI says so.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Data sources
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Data | Source | Used for |
+|---|---|---|
+| End-of-day price and volume | Yahoo Finance chart API (`.NS`) | Watchlist, signals |
+| Announcements | NSE corporate announcements | Brief, alerts |
+| Quarterly and annual numbers | NSE XBRL results filings (legacy and integrated feeds) | All financial figures |
+| Transcripts, annual reports | NSE filings; Screener only to locate company PDFs on BSE or company sites | Research, Q&A |
 
-## Learn More
+Screener's ratios and summaries are never read. BSE's announcement API refused automated access, so it is not used, and no source is accessed with a disguised client.
 
-To learn more about Next.js, take a look at the following resources:
+## How it works
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/lib/sources    fetching and parsing: replaceable, no analysis
+src/lib/domain     pure logic: metrics, classification, guidance, retrieval. Fully unit tested
+src/lib/research   the pipeline: resolve → find documents → extract → validate → compute → cite
+src/lib/feed.ts    live data with cache and snapshot fallback; every payload carries its provenance
+src/app            mobile-first UI and API routes
+scripts/ingest.ts  scheduled job, run by .github/workflows/ingest.yml
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Numbers are never produced by a model.** They come from XBRL tags and are computed in `domain/metrics.ts`. Periods are matched by date, so a YoY can't use the wrong quarter, and mixing bases or period types throws.
 
-## Deploy on Vercel
+**A verdict must survive every definition.** A statement is scored only if it names a number, a period and a metric that filings can test, covers the whole company, and comes from management. The result must then hold on both consolidated and standalone numbers, and for EBITDA margin, with and without other income. Otherwise FINN shows the range or declines to score.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+**Retrieved text is data.** The optional model has no tools, sees passages inside delimiters with an instruction to ignore anything in them, and its answer is rejected if it has a number absent from the sources or lacks citations.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Efficient by default.** One market-wide filings call serves any portfolio. Parsed filings are cached. Search is BM25 over page chunks, with no vector database. The product costs nothing to run without a model.
+
+## Limitations
+
+- Alerts appear in the app only, and rules and read state stay on one device. There are no phone or email notifications.
+- Guidance extraction is rule-based and conservative, so most statements end up as "can't test". Few verdicts are given, and those are favoured to be right.
+- Scanned PDFs have no OCR. Some companies file only a link notice instead of a transcript; these are listed as skipped.
+- EBITDA is derived from filed lines and excludes other income, so it can differ from a company's own figure.
+- Older filings often lack cash flow and balance sheet data; these show as a dash.
+- Annual reports are searched up to page 160 and transcripts up to page 60. The UI states the coverage of each search.
+- LinkedIn is not scraped because it is login-walled. Profiles come from the filing itself.
+
+See [docs/BUILD_STATE.md](docs/BUILD_STATE.md) for what has been verified.

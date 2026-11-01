@@ -153,6 +153,11 @@ describe("transcript reading", () => {
     ];
     expect(extractClaims(pages, "2026-05-10").every((c) => c.metric === "other")).toBe(true);
   });
+  // Regression from a real Sona transcript: a geographic revenue share was scored as revenue growth.
+  it("does not read a revenue share as growth", () => {
+    const pages = ["Ravi Kumar: We expect non-automotive revenue shares to increase to over 25% in FY28 for the company.\nRavi Kumar: Thanks."];
+    expect(extractClaims(pages, "2026-05-10").filter((c) => c.metric === "revenue_growth")).toEqual([]);
+  });
   it("cites the page a sentence is on when a turn crosses a page break", () => {
     const pages = ["Ravi Kumar: Thank you for joining the call today.", "We expect EBITDA margin of 16% in FY28 for the company.\nRavi Kumar: Thanks."];
     expect(extractClaims(pages, "2026-05-10")[0].page).toBe(2);

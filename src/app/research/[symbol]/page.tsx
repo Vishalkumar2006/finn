@@ -98,7 +98,7 @@ function SaidDelivered({ symbol }: { symbol: string }) {
           </div>
           {testable.map((r, i) => <Claim key={i} row={r} basis={data.basis} />)}
           {!testable.length && <p className="empty" style={{ paddingBottom: 8 }}>No statement here pairs a number and a period with a metric in the filings, so FINN gives no verdict.</p>}
-          {rest.length > 0 && <button className="fold" aria-expanded={all} onClick={() => setAll(!all)}><span><b>{rest.length}</b> statements FINN could not test</span><span>{all ? "Hide" : "Show"}</span></button>}
+          {rest.length > 0 && <button className="fold" aria-expanded={all} onClick={() => setAll(!all)}><span><b>{rest.length}</b> {rest.length === 1 ? "statement" : "statements"} FINN could not test</span><span>{all ? "Hide" : "Show"}</span></button>}
           {all && rest.map((r, i) => <Claim key={i} row={r} basis={data.basis} />)}
           <p className="muted" style={{ marginTop: 10 }}>{data.note} Read {data.transcriptsRead.filter((t) => !t.error).length} of {data.transcriptsRead.length} transcripts.{data.transcriptsRead.some((t) => t.error) ? ` Skipped: ${data.transcriptsRead.filter((t) => t.error).map((t) => `${t.label} (${t.error})`).join("; ")}.` : ""}</p>
         </>

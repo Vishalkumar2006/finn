@@ -21,10 +21,11 @@ export const DEFAULT_PORTFOLIO: { symbol: string; name: string; sector: string }
   { symbol: "KAYNES", name: "Kaynes Technology", sector: "EMS" },
 ];
 
-/** Worth trying in Research. Outside the portfolio on purpose; the engine has no special cases for them. */
+/** Worth trying in Research. The engine has no special cases for them. */
 export const RESEARCH_PICKS: { symbol: string; name: string; note: string }[] = [
-  { symbol: "SUPREMEIND", name: "Supreme Industries", note: "Margin guidance tested against filings" },
-  { symbol: "KEI", name: "KEI Industries", note: "Product-line targets, correctly not scored" },
+  { symbol: "SUPREMEIND", name: "Supreme Industries", note: "A margin verdict that depends on how EBITDA is defined" },
+  { symbol: "HAL", name: "Hindustan Aeronautics", note: "Guided 7–8% growth, delivered 9.37%" },
+  { symbol: "KEI", name: "KEI Industries", note: "Product-line targets FINN declines to score" },
   { symbol: "APLAPOLLO", name: "APL Apollo Tubes", note: "Explicit FY27 EBITDA growth guidance" },
   { symbol: "KPITTECH", name: "KPIT Technologies", note: "Constant-currency guidance" },
   { symbol: "TATAELXSI", name: "Tata Elxsi", note: "Standalone only; few numeric targets" },

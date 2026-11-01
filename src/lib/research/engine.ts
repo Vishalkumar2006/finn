@@ -135,6 +135,7 @@ export interface ResearchDoc {
   label: string;
   callDate: string | null;
   host: string;
+  altUrl?: string; // another copy of the same call, tried if the first is only a link notice
 }
 
 const MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split(" ");
@@ -147,7 +148,7 @@ function monthToIso(label: string): string | null {
 }
 
 export async function getDocuments(symbol: string): Promise<{ docs: ResearchDoc[]; fetchedAt: string; stale: boolean; discovery: string }> {
-  const r = await cached(`docs:${symbol}`, 12 * HOUR, async () => {
+  const r = await cached(`docs2:${symbol}`, 12 * HOUR, async () => {
     const out: ResearchDoc[] = [];
     let discovery = "NSE annual reports and transcript filings; Screener for older transcripts";
     const ars = await fetchAnnualReports(symbol).catch(() => []);
@@ -177,7 +178,11 @@ export async function getDocuments(symbol: string): Promise<{ docs: ResearchDoc[
         if (d.kind === "transcript") {
           if (months.has(d.label)) return; // one call per month; Screener often lists a BSE and a company copy
           const iso = monthToIso(d.label);
-          if (iso && taken.some((m) => Math.abs(m - monthIndex(iso)) <= 1)) return;
+          if (iso && taken.some((m) => Math.abs(m - monthIndex(iso)) <= 1)) {
+            const twin = out.find((x) => x.kind === "transcript" && x.callDate && Math.abs(monthIndex(x.callDate) - monthIndex(iso)) <= 1);
+            if (twin && !twin.altUrl) twin.altUrl = d.url;
+            return;
+          }
           months.add(d.label);
         }
         out.push({
@@ -215,6 +220,21 @@ export interface Ledger {
 const METRIC_RANK: Record<string, number> = { revenue_growth: 0, revenue_abs: 0, ebitda_growth: 1, pat_growth: 1, ebitda_margin: 1, ebit_margin: 1, pat_margin: 2, capex: 3, other: 4 };
 const STATUS_RANK: Record<string, number> = { missed: 0, exceeded: 1, met: 2, not_yet: 3, insufficient: 4 };
 
+/** Some companies file a one-page notice linking to the recording; only a real transcript counts. */
+async function loadTranscript(d: ResearchDoc) {
+  let lastError: unknown;
+  for (const url of [d.url, d.altUrl].filter((u): u is string => Boolean(u))) {
+    try {
+      const pdf = await loadPdf(url, 60);
+      if (!pdf.value.scanned && pdf.value.pageCount >= 4) return { ...pdf.value, url };
+      lastError = new Error(pdf.value.scanned ? "Scanned PDF with no text layer" : "Link or notice, not a full transcript");
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
+
 export async function getLedger(symbol: string, quarters = 6): Promise<Ledger> {
   const [{ docs }, fin] = await Promise.all([getDocuments(symbol), getFinancials(symbol)]);
   const transcripts = docs.filter((d) => d.kind === "transcript" && d.callDate).slice(0, quarters);
@@ -225,10 +245,8 @@ export async function getLedger(symbol: string, quarters = 6): Promise<Ledger> {
   const latestEnd = fin.quarters[0]?.periodEnd ?? null;
   const read = await mapLimit(transcripts, 3, async (d) => {
     try {
-      const pdf = await loadPdf(d.url, 60);
-      if (pdf.value.scanned) return { d, pages: pdf.value.pageCount, claims: [] as GuidanceClaim[], error: "Scanned PDF with no text layer" };
-      if (pdf.value.pageCount < 4) return { d, pages: pdf.value.pageCount, claims: [] as GuidanceClaim[], error: "Link or notice, not a full transcript" };
-      return { d, pages: pdf.value.pageCount, claims: extractClaims(pdf.value.pages, d.callDate!) };
+      const t = await loadTranscript(d);
+      return { d: { ...d, url: t.url }, pages: t.pageCount, claims: extractClaims(t.pages, d.callDate!) };
     } catch (e) {
       return { d, pages: 0, claims: [] as GuidanceClaim[], error: e instanceof Error ? e.message : "Could not read" };
     }
@@ -264,7 +282,11 @@ async function corpus(symbol: string, opts: { transcripts?: number; ar?: boolean
   const ar = opts.ar === false ? [] : docs.filter((d) => d.kind === "annual_report").slice(0, 1);
   const parsed = await mapLimit([...tr, ...ar], 3, async (d) => {
     try {
-      const pdf = await loadPdf(d.url, d.kind === "annual_report" ? 160 : 60);
+      if (d.kind === "transcript") {
+        const t = await loadTranscript(d);
+        return { d: { ...d, url: t.url }, pages: t.pages, pageCount: t.pageCount, scanned: false };
+      }
+      const pdf = await loadPdf(d.url, 160);
       return { d, pages: pdf.value.pages, pageCount: pdf.value.pageCount, scanned: pdf.value.scanned };
     } catch (e) {
       return { d, pages: [] as string[], pageCount: 0, scanned: false, error: e instanceof Error ? e.message : "Could not read" };

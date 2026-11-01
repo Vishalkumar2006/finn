@@ -276,11 +276,25 @@ export async function getLedger(symbol: string, quarters = 6): Promise<Ledger> {
 
 /* ---------- retrieval and questions ---------- */
 
+/** Parsing continues in the background and is cached, so asking again can succeed. */
+const within = <T,>(work: Promise<T>, ms: number, fallback: T): Promise<T> =>
+  Promise.race([work, new Promise<T>((res) => setTimeout(() => res(fallback), ms))]);
+
+// A cold server can need longer than this for a large annual report; answer from what is ready instead of failing.
+const CORPUS_BUDGET_MS = 40000;
+
 async function corpus(symbol: string, opts: { transcripts?: number; ar?: boolean } = {}) {
   const { docs } = await getDocuments(symbol);
   const tr = docs.filter((d) => d.kind === "transcript").slice(0, opts.transcripts ?? 4);
   const ar = opts.ar === false ? [] : docs.filter((d) => d.kind === "annual_report").slice(0, 1);
-  const parsed = await mapLimit([...tr, ...ar], 3, async (d) => {
+  const started = Date.now();
+  const parsed = await Promise.all([...tr, ...ar].map(async (d) => {
+    const late = { d, pages: [] as string[], pageCount: 0, scanned: false, error: "Not read in time; ask again to retry" };
+    return within(readOne(d), Math.max(1000, CORPUS_BUDGET_MS - (Date.now() - started)), late);
+  }));
+  return parsed;
+
+  async function readOne(d: ResearchDoc) {
     try {
       if (d.kind === "transcript") {
         const t = await loadTranscript(d);
@@ -291,8 +305,7 @@ async function corpus(symbol: string, opts: { transcripts?: number; ar?: boolean
     } catch (e) {
       return { d, pages: [] as string[], pageCount: 0, scanned: false, error: e instanceof Error ? e.message : "Could not read" };
     }
-  });
-  return parsed;
+  }
 }
 
 function toCitation(h: Hit, d: ResearchDoc): SourceRef {
@@ -343,7 +356,7 @@ export async function ask(symbol: string, question: string, previous?: string): 
   if (!supported(hits[0], query)) {
     return {
       mode: "abstain",
-      answer: [chunks.length ? "The documents searched do not support an answer to this." : "No readable primary documents were found for this company."],
+      answer: [chunks.length ? "The documents searched do not support an answer to this." : "No primary documents could be read for this company just now. Check what was searched below, then try again."],
       citations: [], coverage,
     };
   }

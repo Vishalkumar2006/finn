@@ -13,7 +13,7 @@ export interface Turn {
 
 const SPEAKER = /^([A-Z][A-Za-z.'-]+(?: [A-Z][A-Za-z.'-]*){0,4})\s*:\s*(.*)$/;
 const PRODUCT_HEADING = /\b(phones?|refrigerators?|lighting|appliances|electronics|segment|business|division|vertical|products?|wearables|solutions|washing|machines?|systems?)\b/i;
-const NOT_SPEAKERS = /^(note|disclaimer|management|moderator note|participants?|safe harbor|forward looking|page|date|time|email|website|cin|registered office)$/i;
+const NOT_SPEAKERS = /^(sensitivity|classification|confidential|internal|note|disclaimer|management|moderator note|participants?|safe harbor|forward looking|page|date|time|email|website|cin|registered office)$/i;
 
 /** Split a transcript into speaker turns, tracking the PDF page each begins on. */
 export function parseTurns(pages: string[]): Turn[] {
@@ -104,6 +104,8 @@ function pageOf(t: Turn, sentence: string): number {
 
 const FORWARD = /\b(guidance|guide[ds]?|we (would |should |will |shall )?(expect|target|aim|anticipate|plan|estimate|intend|are confident|are targeting|are looking at|aspire)|(expect|target|outlook|aspiration|ambition) (of|is|to|for)|should be (able|in|around|at)|will be (in the range|around|at|between)|would be (in the range|around|at|between)|we are looking at|going forward|we will (deliver|achieve|grow|maintain|sustain|invest|spend)|likely to|on track to)\b/i;
 const BACKWARD = /\b(in line with|well within|have already|has already|already (pumped|spent|invested)|if you (remove|exclude)|last (quarter|year)|previous (quarter|year)|we (delivered|reported|achieved|grew|recorded|posted|saw)|was (up|down|at)|were (up|down|at)|has (grown|increased|declined)|for the quarter ended)\b/i;
+// Reported results use these; a target does not. Costs some recollected guidance, which is the safe direction.
+const PAST = /\b(were|was|had been|came in|ended up|turned out)\b/i;
 const FILLER = /\bsafe harbou?r|forward[- ]looking statements?|actual results may differ|risks and uncertainties\b/i;
 
 function metricOf(s: string): GuidanceMetric {
@@ -209,7 +211,7 @@ export function extractClaims(pages: string[], callDate: string): GuidanceClaim[
     const sentences = splitSentences(t.text);
     sentences.forEach((s, si) => {
       if (s.length < 30 || s.length > 450 || s.endsWith("?") || FILLER.test(s)) return;
-      if (!FORWARD.test(s) || BACKWARD.test(s)) return;
+      if (!FORWARD.test(s) || BACKWARD.test(s) || PAST.test(s)) return;
       const metric = metricOf(s);
       if (metric === "other" && !KNOWN_OTHER.test(s)) return;
       const v = parseValue(s);

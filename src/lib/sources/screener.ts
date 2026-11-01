@@ -18,7 +18,7 @@ export async function searchScreener(q: string): Promise<ScreenerMatch[]> {
   const j = (await r.json()) as { name?: string; url?: string }[];
   const out: ScreenerMatch[] = [];
   for (const x of j) {
-    const m = x.url?.match(/^\/company\/([A-Z0-9&_-]+)\//i);
+    const m = x.url?.match(/^\/company\/([A-Z0-9&_-]+)\//); // BSE-only entries use lower-case paths like /company/id/123/
     // Numeric slugs are BSE-only scrip codes with no NSE symbol.
     if (m && !/^\d+$/.test(m[1]) && x.name) out.push({ symbol: m[1].toUpperCase(), name: x.name });
   }

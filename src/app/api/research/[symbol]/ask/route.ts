@@ -4,7 +4,7 @@ import { bad, failure, parseSymbol } from "@/lib/api";
 import { ask } from "@/lib/research/engine";
 import { llmEnabled } from "@/lib/research/llm";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 const Body = z.object({ question: z.string().trim().min(4).max(400), previous: z.string().trim().max(400).optional() });
 

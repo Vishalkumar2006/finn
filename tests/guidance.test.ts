@@ -169,6 +169,15 @@ describe("transcript reading", () => {
     const pages = ["Ravi Kumar: The EBITDA margin for the P&M business has improved this year. We are reasonably confident to achieve our full year EBITDA margin target of 8.5%, and we expect that in FY28."];
     expect(extractClaims(pages, "2026-05-10")[0].basisNote).toMatch(/part of the business/);
   });
+  // Regressions found by testing production on an unfamiliar ticker and on L&T.
+  it("does not treat past-tense commentary as guidance", () => {
+    const pages = ["Ravi Kumar: Going forward this year, with no such revenue growth, margins were just above the double-digit figure."];
+    expect(extractClaims(pages, "2026-05-10")).toEqual([]);
+  });
+  it("does not take a page footer for a speaker", () => {
+    const pages = ["Ravi Kumar: We expect EBITDA margin of 16% in FY28 for the company.\nSensitivity : This Document is Classified as Internal Use\nRavi Kumar: We expect EBITDA margin of 16.5% in FY29 for the company.\nSensitivity : This Document is Classified as Internal Use"];
+    expect(extractClaims(pages, "2026-05-10").map((c) => c.speaker)).toEqual(["Ravi Kumar", "Ravi Kumar"]);
+  });
   it("cites the page a sentence is on when a turn crosses a page break", () => {
     const pages = ["Ravi Kumar: Thank you for joining the call today.", "We expect EBITDA margin of 16% in FY28 for the company.\nRavi Kumar: Thanks."];
     expect(extractClaims(pages, "2026-05-10")[0].page).toBe(2);

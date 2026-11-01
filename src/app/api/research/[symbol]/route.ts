@@ -4,7 +4,7 @@ import type { Basis } from "@/lib/domain/types";
 import { researchSeed, seedIsFresh } from "@/lib/feed";
 import { buildCase, getBusiness, getDocuments, getFinancials, getLedger, type Financials, type Ledger } from "@/lib/research/engine";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 async function financials(symbol: string, basis?: Basis): Promise<{ fin: Financials; seeded: boolean }> {
   const seed = researchSeed.financials[symbol];

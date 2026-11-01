@@ -18,14 +18,14 @@ The application is complete and works locally on a production build. It is not d
 
 | Check | Result |
 |---|---|
-| Unit tests | 87 pass |
+| Unit tests | 89 pass |
 | Lint, typecheck, production build | Pass |
 | Portfolio tickers | 19 verified against Yahoo and NSE; last session 30 Oct 2026 |
 | Brief on genuine filings | Live NSE data, 24h and 7d, in a browser |
 | EOD signal on real data | Trent +5.4% on 3.86× volume, 30 Oct 2026 |
 | XBRL against the filed PDF | Tata Elxsi Q2 FY27 revenue, expenses, PBT and PAT match |
 | Answer from an annual report | Supreme FY26 report, statutory auditors, pp. 19-31 |
-| Guidance vs actual | HAL: 7-8% guided, 9.37% filed, read in source context. Supreme: 14.5-15% guided, 13.85-14.77% filed, no verdict |
+| Guidance vs actual | L&T: 15% guided on two calls, 11.79% filed (7.84% standalone), read in source context. HAL: 7-8% guided, 9.37% filed, read in source context. Supreme: 14.5-15% guided, 13.85-14.77% filed, no verdict |
 | Unfamiliar tickers | RATNAMANI end to end; 16 of 17 in a wider scan (LTIM: no filings found, reported as such) |
 | Invalid ticker | Clean empty result and error |
 | Mobile | No horizontal overflow at 390px in headless Chrome emulation; no console errors |
@@ -47,6 +47,7 @@ Reading scored claims in context found false verdicts that are now fixed, each w
 - Bajaj Finance: AUM growth scored as revenue growth.
 - Sona: a revenue share scored as growth.
 - Supreme: "missed" held only on one EBITDA definition.
+- L&T: "10% and 15% respectively" read as 10% revenue growth, and a P&M business margin treated as company-wide.
 
 Only a sample of scored claims was reviewed, and rules can still misfire. New companies may surface new error types.
 

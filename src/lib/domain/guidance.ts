@@ -176,9 +176,10 @@ export function parsePeriod(raw: string, callDate: string): { period: FiscalPeri
   return { period: null, text: null };
 }
 
-const SCOPED = /\b(segments?|division|vertical|subsidiary|exports?|domestic business|international business|this business|that business|in the \w+ business|on [A-Z]{3,}\b|for [A-Z]{3,}\b|in [A-Z]{3,}\b)/;
+const SCOPED = /\b(segments?|division|vertical|subsidiary|exports?|domestic business|international business|this business|that business|(?:for|in|of) the [\w&-]+ (?:business|portfolio)|on [A-Z]{3,}\b|for [A-Z]{3,}\b|in [A-Z]{3,}\b)/;
 
 function basisNote(s: string): string | null {
+  if (/\brespectively\b/i.test(s)) return "Several targets in one sentence; FINN will not guess which number applies.";
   if (/constant currency|\bcc\b/i.test(s)) return "Guided in constant currency; filings report in INR.";
   if (/\b(usd|dollar|us\$)\b/i.test(s)) return "Guided in USD; filings report in INR.";
   if (SCOPED.test(s)) return "Scope looks narrower than the whole company.";

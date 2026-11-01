@@ -158,6 +158,17 @@ describe("transcript reading", () => {
     const pages = ["Ravi Kumar: We expect non-automotive revenue shares to increase to over 25% in FY28 for the company.\nRavi Kumar: Thanks."];
     expect(extractClaims(pages, "2026-05-10").filter((c) => c.metric === "revenue_growth")).toEqual([]);
   });
+  // Regressions from real L&T transcripts.
+  it("will not pick a number from a respectively sentence", () => {
+    const pages = ["Ravi Kumar: We expect our group order inflows and group revenues to grow at 10% and 15% respectively for FY28."];
+    const [c] = extractClaims(pages, "2026-05-10");
+    expect(c.basisNote).toMatch(/Several targets/);
+    expect(evaluateClaim(c, series, "2026-03-31").status).toBe("insufficient");
+  });
+  it("carries business-line scope from the preceding sentence", () => {
+    const pages = ["Ravi Kumar: The EBITDA margin for the P&M business has improved this year. We are reasonably confident to achieve our full year EBITDA margin target of 8.5%, and we expect that in FY28."];
+    expect(extractClaims(pages, "2026-05-10")[0].basisNote).toMatch(/part of the business/);
+  });
   it("cites the page a sentence is on when a turn crosses a page break", () => {
     const pages = ["Ravi Kumar: Thank you for joining the call today.", "We expect EBITDA margin of 16% in FY28 for the company.\nRavi Kumar: Thanks."];
     expect(extractClaims(pages, "2026-05-10")[0].page).toBe(2);

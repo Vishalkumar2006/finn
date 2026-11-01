@@ -23,6 +23,7 @@ export const DEFAULT_PORTFOLIO: { symbol: string; name: string; sector: string }
 
 /** Worth trying in Research. The engine has no special cases for them. */
 export const RESEARCH_PICKS: { symbol: string; name: string; note: string }[] = [
+  { symbol: "LT", name: "Larsen & Toubro", note: "Guided 15% FY26 revenue growth, filed 11.79%" },
   { symbol: "SUPREMEIND", name: "Supreme Industries", note: "A margin verdict that depends on how EBITDA is defined" },
   { symbol: "HAL", name: "Hindustan Aeronautics", note: "Guided 7–8% growth, delivered 9.37%" },
   { symbol: "KEI", name: "KEI Industries", note: "Product-line targets FINN declines to score" },

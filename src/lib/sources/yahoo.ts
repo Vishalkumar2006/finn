@@ -32,7 +32,7 @@ export function parseChart(json: unknown, symbol: string, now = new Date()): Pri
 
 export async function fetchHistory(symbol: string, range = "6mo"): Promise<PriceHistory> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}.NS?range=${range}&interval=1d`;
-  const r = await get(url, { source: "yahoo" });
+  const r = await get(url, { source: "yahoo", timeoutMs: 8000, retries: 0 });
   return parseChart(await r.json(), symbol);
 }
 

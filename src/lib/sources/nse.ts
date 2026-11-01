@@ -32,7 +32,7 @@ const ddmmyyyy = (iso: string) => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.
 /** from/to are YYYY-MM-DD. Without a symbol this returns every listed company for the range. */
 export async function fetchAnnouncements(from: string, to: string, symbol?: string): Promise<RawAnnouncement[]> {
   const sym = symbol ? `&symbol=${encodeURIComponent(symbol)}` : "";
-  const r = await get(`${BASE}/corporate-announcements?index=equities&from_date=${ddmmyyyy(from)}&to_date=${ddmmyyyy(to)}${sym}`, { source: "nse", timeoutMs: 30000 });
+  const r = await get(`${BASE}/corporate-announcements?index=equities&from_date=${ddmmyyyy(from)}&to_date=${ddmmyyyy(to)}${sym}`, { source: "nse", timeoutMs: 15000, retries: 0 });
   const j = (await r.json()) as NseAnn[];
   if (!Array.isArray(j)) return [];
   return j.map(toRaw).filter((x): x is RawAnnouncement => x !== null);

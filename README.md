@@ -16,7 +16,7 @@ npm run build      # production build
 npm run ingest     # refresh data/snapshot from live sources
 ```
 
-Node 22+. No keys needed. To let a model phrase answers, set the variables in `.env.example`; without them, answers are direct quotes and the UI says so.
+Node 22+. No keys needed. To let a model synthesize answers, set the variables in `.env.example` (verified with `gemini-3.1-flash-lite` on Gemini's OpenAI-compatible endpoint); without them, answers are direct quotes and the UI says so.
 
 ## Data sources
 
@@ -44,7 +44,7 @@ scripts/ingest.ts  manual snapshot refresh
 
 **A verdict must survive every definition.** A statement is scored only if it names a number, a period and a metric that filings can test, covers the whole company, and comes from management. The result must then hold on both consolidated and standalone numbers, and for EBITDA margin, with and without other income. Otherwise FINN shows the range or declines to score.
 
-**Retrieved text is data.** The optional model has no tools, sees passages inside delimiters with an instruction to ignore anything in them, and its answer is rejected if it has a number absent from the sources or lacks citations.
+**Retrieved text is data.** The optional model has no tools and never receives filed numbers or verdicts. It sees passages inside delimiters with an instruction to ignore anything in them. Each claim it returns is checked against the passages it cites (`domain/answerCheck.ts`). Claims that fail are removed and counted on screen, and if none survive the answer falls back to labelled direct quotes.
 
 **Efficient by default.** One market-wide filings call serves any portfolio. Parsed filings are cached. Search is BM25 over page chunks, with no vector database. The product costs nothing to run without a model.
 

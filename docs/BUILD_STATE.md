@@ -11,6 +11,36 @@ Deployed and public.
 
 The ENAM email has not been sent.
 
+## LLM research layer
+
+Enabled in production and verified against the real provider.
+
+- Primary model: `gemini-3.1-flash-lite`. Fallback: `gemini-3-flash-preview`, tried once on a rate limit, an outage or a timeout. Both go through Gemini's OpenAI-compatible endpoint.
+- `gemini-3.8-flash`, the first configured model, was rejected: all three timed test calls ran past 25 seconds, and earlier calls took 184 seconds or returned 503.
+- Free-tier limits are low and per model: `gemini-3.6-flash` stopped at 20 requests a day. The limit for the deployed model has not been measured.
+
+How answers are made safe: the model returns claims as JSON. Each claim is checked only against the passages it cites, for numbers, fiscal labels, names, direction of change, verdict words and word overlap. Failing claims are removed and the reader is told. If none survive, or the provider fails, the answer falls back to labelled direct quotes. The model never receives filed figures or guidance verdicts, and its output never reaches them.
+
+Limits: 12 questions a minute per client, 300 model calls a day per server instance (`LLM_DAILY_LIMIT`), 400-character questions, 4 KB bodies, a same-origin check, a 15-second model budget, and a 6-hour cache of checked answers. Counters are in memory and per instance.
+
+| LLM check | Result |
+|---|---|
+| Unsupported question | Abstains (CEO's pet on L&T, TCS and Supreme) |
+| Instructions inside a passage or question | Ignored on the deployed model; invented figure never appeared |
+| Outside knowledge, calculation, verdict, share-price forecast | Abstains on all four |
+| Bad key, unknown model, timeout | Labelled extractive fallback |
+| Fallback model | Fired in production (Bajaj Finance) |
+| Claims read against cited passages | L&T, Supreme, Ratnamani, KEI, Century Plyboards, Greenpanel, Titan |
+| Limits on the public URL | Long question 400, large body 413, cross-site 403, burst 429 |
+| Public outcomes, 8 sampled questions | 4 full, 2 with a claim removed, 1 abstention, 1 failure (below) |
+
+### LLM limitations
+
+- The checks are necessary, not sufficient. They caught wrong numbers and unrelated citations, but an answer can pass and still mislead by framing. One early answer called an old guidance figure current; a prompt rule now requires dated claims, but nothing enforces it.
+- The model can't see filed results, so it can't say how guidance turned out. The UI says so and points to Said vs delivered.
+- HDFC Bank's first sampled question took 83.6 seconds and returned a non-JSON response. It did not recur (10.4 seconds on the next cold run), and the cause was not established. PDF parsing now yields between pages as a precaution.
+- Rate limits are per instance, so a distributed caller can exceed them. The provider quota is the hard ceiling: if it is spent, everyone gets extractive answers until it resets. A billing-enabled key would turn this exposure into cost, so keep a free key or set a budget.
+
 ## Production results
 
 Tested against the public URL with headless Chrome at 390px and 1280px, and with direct API calls.
@@ -48,14 +78,13 @@ There is no unattended monitoring. The scheduled workflow was removed so no bot 
 
 | Check | Result |
 |---|---|
-| Unit tests, lint, typecheck, build | 91 tests pass; others clean |
+| Unit tests, lint, typecheck, build | 125 tests pass; others clean |
 | Commit identity | All commits `Vishalkumar2006 <vishku2004@gmail.com>`, no AI trailers |
 | Secrets in Git history | Pattern scan found none; no env files, logs or PDFs tracked |
 
 ## Not verified
 
 - A physical phone. Mobile results are Chrome device emulation.
-- The LLM path has never called a real provider. Only its number validator is tested.
 - The Vercel request-log status query returned no usable data, so the log result above covers error-level entries only.
 - The cause of the first production question timeout was not confirmed. Slow cold-start parsing is the likely cause; it did not recur after the fix.
 - NSE access may vary over time. Today's success does not guarantee it stays open.
@@ -77,6 +106,4 @@ Each scored claim in the snapshot was read in context, but rules can still misfi
 ## Remaining before submission
 
 1. Open the app on a real phone.
-2. Decide on the optional LLM layer.
-3. Review the AI build history and attach it. Copy kept outside the repo in `C:\Users\vishk\Projects\finn-ai-build-history`.
-4. Fill the name and build-history placeholders in `docs/SUBMISSION.md`, then send it.
+2. Review the AI build history and attach it. Copy kept outside the repo in `C:\Users\vishk\Projects\finn-ai-build-history`.

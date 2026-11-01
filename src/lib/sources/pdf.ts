@@ -35,6 +35,8 @@ async function parse(url: string, maxPages: number): Promise<ParsedPdf> {
     }
     pages.push(out.replace(/[ \t]+/g, " ").trim());
     page.cleanup();
+    // Parsing runs on the request's thread. Without this pause, time budgets elsewhere can't fire on a large report.
+    await new Promise((res) => setImmediate(res));
   }
   const chars = pages.reduce((a, p) => a + p.length, 0);
   return { url, pageCount, pages, scanned: pages.length > 0 && chars / pages.length < 80 };

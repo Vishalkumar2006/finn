@@ -1,4 +1,5 @@
 import { getDocumentProxy } from "unpdf";
+import { addTiming } from "../timing";
 import { cached, get, SourceError } from "./http";
 
 const MAX_BYTES = 40 * 1024 * 1024;
@@ -11,8 +12,11 @@ export interface ParsedPdf {
 }
 
 async function parse(url: string, maxPages: number): Promise<ParsedPdf> {
+  const t0 = Date.now();
   const r = await get(url, { timeoutMs: 45000, source: new URL(url).host });
   const buf = await r.arrayBuffer();
+  addTiming("download", Date.now() - t0);
+  const t1 = Date.now();
   if (buf.byteLength > MAX_BYTES) throw new SourceError(url, null, "PDF exceeds the 40 MB limit");
   const head = new TextDecoder().decode(buf.slice(0, 5));
   if (head !== "%PDF-") throw new SourceError(url, null, "Source did not return a PDF");
@@ -38,6 +42,7 @@ async function parse(url: string, maxPages: number): Promise<ParsedPdf> {
     // Parsing runs on the request's thread. Without this pause, time budgets elsewhere can't fire on a large report.
     await new Promise((res) => setImmediate(res));
   }
+  addTiming("parse", Date.now() - t1);
   const chars = pages.reduce((a, p) => a + p.length, 0);
   return { url, pageCount, pages, scanned: pages.length > 0 && chars / pages.length < 80 };
 }

@@ -1,8 +1,9 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { bad, failure, parseSymbol } from "@/lib/api";
 import type { Basis } from "@/lib/domain/types";
 import { researchSeed, seedIsFresh } from "@/lib/feed";
-import { buildCase, getBusiness, getDocuments, getFinancials, getLedger, type Financials, type Ledger } from "@/lib/research/engine";
+import { buildCase, getBusiness, getDocuments, getFinancials, getLedger, warmDocuments, type Financials, type Ledger } from "@/lib/research/engine";
+import { allowWarm, clientKey } from "@/lib/research/guard";
 
 export const maxDuration = 90;
 
@@ -52,6 +53,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ symbol: str
         return NextResponse.json(await getBusiness(symbol));
       case "documents":
         return NextResponse.json(await getDocuments(symbol));
+      case "warm":
+        // Returns at once. A refused or failed warm-up changes nothing: the question reads the documents itself.
+        if (allowWarm(clientKey(req.headers))) after(() => warmDocuments(symbol).catch(() => undefined));
+        return NextResponse.json({ ok: true });
       default:
         return bad("Unknown part");
     }

@@ -10,6 +10,7 @@ import { fetchDocumentIndex, searchScreener } from "../sources/screener";
 import { classifyEntity, parseResults } from "../sources/xbrl";
 import { fetchHistory, searchYahoo } from "../sources/yahoo";
 import { get } from "../sources/http";
+import { addTiming, timed } from "../timing";
 import { allowLlmCall } from "./guard";
 import { complete, llmEnabled, llmModelName, promptVersion } from "./llm";
 
@@ -287,18 +288,31 @@ const within = <T,>(work: Promise<T>, ms: number, fallback: T): Promise<T> =>
 // A cold server can need longer than this for a large annual report; answer from what is ready instead of failing.
 const CORPUS_BUDGET_MS = 40000;
 
-async function corpus(symbol: string, opts: { transcripts?: number; ar?: boolean } = {}) {
-  const { docs } = await getDocuments(symbol);
+// Annual reports are the slow download (often over 20s, transcripts about 1s). A question waits this long for one if transcripts are ready.
+const ASK_AR_WAIT_MS = 8000;
+const LATE_DOC = "Not read in time; ask again to retry";
+
+/**
+ * Transcripts get the full budget. Reports get arWaitMs when a transcript was readable, and the full budget when
+ * none was, because then there is nothing else to answer from. Late documents keep loading into the cache.
+ */
+export async function gatherDocs<R extends { pages: string[] }>(transcripts: Promise<R>[], reports: Promise<R>[], late: (position: number) => R, budgetMs: number, arWaitMs?: number): Promise<R[]> {
+  const started = Date.now();
+  const left = () => Math.max(1000, budgetMs - (Date.now() - started));
+  const tr = await Promise.all(transcripts.map((p, i) => within(p, left(), late(i))));
+  const arMs = arWaitMs != null && tr.some((d) => d.pages.length) ? Math.max(0, arWaitMs - (Date.now() - started)) : left();
+  return [...tr, ...(await Promise.all(reports.map((p, i) => within(p, arMs, late(tr.length + i)))))];
+}
+
+async function corpus(symbol: string, opts: { transcripts?: number; ar?: boolean; arWaitMs?: number } = {}) {
+  const { docs } = await timed("discovery", () => getDocuments(symbol));
   const tr = docs.filter((d) => d.kind === "transcript").slice(0, opts.transcripts ?? 4);
   const ar = opts.ar === false ? [] : docs.filter((d) => d.kind === "annual_report").slice(0, 1);
-  const started = Date.now();
-  const parsed = await Promise.all([...tr, ...ar].map(async (d) => {
-    const late = { d, pages: [] as string[], pageCount: 0, scanned: false, error: "Not read in time; ask again to retry" };
-    return within(readOne(d), Math.max(1000, CORPUS_BUDGET_MS - (Date.now() - started)), late);
-  }));
-  return parsed;
+  const list = [...tr, ...ar];
+  const late = (i: number) => ({ d: list[i], pages: [] as string[], pageCount: 0, scanned: false, error: LATE_DOC });
+  return gatherDocs<Awaited<ReturnType<typeof readOne>>>(tr.map(readOne), ar.map(readOne), late, CORPUS_BUDGET_MS, opts.arWaitMs);
 
-  async function readOne(d: ResearchDoc) {
+  async function readOne(d: ResearchDoc): Promise<{ d: ResearchDoc; pages: string[]; pageCount: number; scanned: boolean; error?: string }> {
     try {
       if (d.kind === "transcript") {
         const t = await loadTranscript(d);
@@ -342,6 +356,7 @@ export interface Answer {
   coverage: string[];
   llmRejected?: string;
   model?: string;
+  note?: string;
 }
 
 /** Enough different documents for "how has this changed" to be answerable: best passages, no more than 3 per document. */
@@ -373,7 +388,7 @@ async function synthesize(question: string, previous: string | undefined, passag
     return `<passage id="${i + 1}" source="${meta}, page ${h.page}">\n${sanitisePassage(h.text)}\n</passage>`;
   }).join("\n");
   const context = previous ? `Earlier question, for context only: ${previous.slice(0, 400)}\n` : "";
-  const r = await complete(`${blocks}\n\n${context}Question: ${question}`);
+  const r = await timed("llm", () => complete(`${blocks}\n\n${context}Question: ${question}`));
   if (!r.ok) return { rejected: REASON[r.reason] ?? REASON.provider };
   const parsed = parseModelAnswer(r.text);
   if (!parsed) return { rejected: "The model's reply was malformed." };
@@ -391,25 +406,40 @@ async function synthesize(question: string, previous: string | undefined, passag
   return { mode: "llm", answer: lines, citations: used.map((n) => cites[n - 1]), model, llmRejected: note };
 }
 
+/** Starts reading a company's documents before any question is asked. Uses the same cache and de-duplication. */
+export async function warmDocuments(symbol: string): Promise<void> {
+  await corpus(symbol);
+}
+
 export async function ask(symbol: string, question: string, previous?: string): Promise<Answer> {
   let docs: Awaited<ReturnType<typeof corpus>>;
   try {
-    docs = await corpus(symbol);
+    docs = await timed("corpus", () => corpus(symbol, { arWaitMs: ASK_AR_WAIT_MS }));
   } catch (e) {
     return { mode: "abstain", answer: [e instanceof Error ? e.message : "Documents could not be found."], citations: [], coverage: [] };
   }
+  const answer = await answerFrom(docs, symbol, question, previous);
+  const pending = docs.some((d) => d.d.kind === "annual_report" && "error" in d && d.error === LATE_DOC);
+  return pending ? { ...answer, note: "The annual report is still loading, so this answer does not draw on it. Ask again shortly to include it." } : answer;
+}
+
+async function answerFrom(docs: Awaited<ReturnType<typeof corpus>>, symbol: string, question: string, previous?: string): Promise<Answer> {
   const coverage = docs.map((d) =>
     d.pages.length ? `${d.d.label} ${d.d.kind === "transcript" ? "transcript" : "annual report"}: ${d.pages.length} of ${d.pageCount} pages searched`
       : `${d.d.label}: not readable (${"error" in d ? d.error : d.scanned ? "scanned" : "empty"})`);
   const byId = new Map(docs.map((d) => [d.d.id, d.d]));
+  const t0 = Date.now();
   const chunks = dropBoilerplate(docs.flatMap((d) => chunkPages(d.d.id, d.d.kind === "transcript" ? managementPages(d.pages) : d.pages)));
   // A follow-up stands alone if it can. Only a vague one ("why was that?") borrows the previous question's terms.
+  const t1 = Date.now();
+  addTiming("chunk", t1 - t0);
   let hits = search(chunks, question, 24);
   let query = question;
   if (previous && !supported(hits[0], question)) {
     query = `${question} ${previous}`;
     hits = search(chunks, query, 24);
   }
+  addTiming("bm25", Date.now() - t1);
   const abstain = (llmRejected?: string): Answer => ({
     mode: "abstain",
     answer: [llmRejected && chunks.length ? "No passage matches closely enough to quote, and the model that could assess it did not give a usable answer. Try a more specific question." : chunks.length ? "The documents searched do not support an answer to this." : "No primary documents could be read for this company just now. Check what was searched below, then try again."],

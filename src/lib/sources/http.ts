@@ -90,6 +90,9 @@ export async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>
   }
 }
 
+/** Resolves when work already started has finished, so a response can return while a download completes. */
+export const backgroundWork = () => Promise.allSettled([...inflight.values()]);
+
 export async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;

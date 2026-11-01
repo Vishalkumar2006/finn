@@ -31,6 +31,9 @@ export function clientKey(headers: Headers): string {
 
 export const allowQuestion = (key: string) => perClient.allow(key);
 
+const warmPerClient = new WindowCounter(12, 60e3);
+export const allowWarm = (key: string) => warmPerClient.allow(key);
+
 /** When spent, questions still work and fall back to direct quotes, so abuse can't take the feature down. */
 export const allowLlmCall = () => llmDaily.allow("all");
 

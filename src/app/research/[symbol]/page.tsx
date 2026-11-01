@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useState, type FormEvent } from "react";
+import { Suspense, use, useEffect, useState, type FormEvent } from "react";
 import { Cite, ErrorNote, Skeleton, Sparkline } from "@/components/Shell";
 import { fmtCr, fmtDate, fmtPct, fmtTime, updateSettings, useApi, useSettings } from "@/lib/client";
 import { comparePeriods, marginPct, pctChange, ratio, type MetricKey } from "@/lib/domain/metrics";
@@ -33,6 +33,9 @@ function Company({ params }: { params: Promise<{ symbol: string }> }) {
   const held = s.symbols.includes(symbol);
   const lookup = useApi<{ matches: { symbol: string; name: string }[] }>(s.names[symbol] ? null : `/api/company?q=${enc}`);
   const name = s.names[symbol] ?? lookup.data?.matches.find((m) => m.symbol === symbol)?.name;
+  useEffect(() => {
+    fetch(`/api/research/${enc}?part=warm`).catch(() => undefined); // only saves time on the first question
+  }, [enc]);
 
   return (
     <>
@@ -329,6 +332,7 @@ function Ask({ symbol }: { symbol: string }) {
               <p className="mode">
                 {t.a.mode === "llm" ? `Model-synthesized (${t.a.model}) from the cited passages. Numbers and wording were checked against them automatically; open a source to confirm. The model does not see filed results: outcomes are in Said vs delivered.` : t.a.mode === "extractive" ? `Extractive: direct quotes, best match, nothing paraphrased.` : `No answer given${t.a.model ? ` (assessed by ${t.a.model})` : ""}.`}
                 {t.a.llmRejected ? ` ${t.a.llmRejected}` : ""}
+                {t.a.note ? ` ${t.a.note}` : ""}
               </p>
               <details className="muted" style={{ marginTop: 4 }}><summary>What was searched</summary>{t.a.coverage.join("; ")}</details>
             </>

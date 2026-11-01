@@ -31,7 +31,8 @@ function Company({ params }: { params: Promise<{ symbol: string }> }) {
   const quote = useApi<{ quotes: Quote[] }>(`/api/quotes?symbols=${enc}&price=${s.pricePct}&volume=${s.volumeMultiple}&sessions=1`);
   const q = quote.data?.quotes[0];
   const held = s.symbols.includes(symbol);
-  const name = s.names[symbol];
+  const lookup = useApi<{ matches: { symbol: string; name: string }[] }>(s.names[symbol] ? null : `/api/company?q=${enc}`);
+  const name = s.names[symbol] ?? lookup.data?.matches.find((m) => m.symbol === symbol)?.name;
 
   return (
     <>
@@ -48,7 +49,7 @@ function Company({ params }: { params: Promise<{ symbol: string }> }) {
         ) : quote.data && <p className="notice err">No NSE price data for {symbol}. Check the ticker.</p>}
         <div className="prov" style={{ margin: "6px 0 0" }}>
           {q?.lastDate && <span>EOD {fmtDate(q.lastDate)}</span>}
-          <button className="link" onClick={() => updateSettings(held ? { symbols: s.symbols.filter((x) => x !== symbol) } : { symbols: [...s.symbols, symbol] })}>{held ? "Remove from portfolio" : "Add to portfolio"}</button>
+          <button className="link" onClick={() => updateSettings(held ? { symbols: s.symbols.filter((x) => x !== symbol) } : { symbols: [...s.symbols, symbol], names: name ? { ...s.names, [symbol]: name } : s.names })}>{held ? "Remove from portfolio" : "Add to portfolio"}</button>
         </div>
       </header>
       <nav className="jump" aria-label="Sections">
@@ -65,7 +66,7 @@ function Company({ params }: { params: Promise<{ symbol: string }> }) {
 }
 
 function SeedTag({ at }: { at?: string | null }) {
-  return at ? <div className="prov"><span className="tag snapshot">Saved run</span><span>Scheduled analysis of {fmtTime(at)} IST</span></div> : <div className="prov"><span className="tag live">Fresh analysis</span></div>;
+  return at ? <div className="prov"><span className="tag snapshot">Saved analysis</span><span>From the run at {fmtTime(at)} IST</span></div> : <div className="prov"><span className="tag live">Fresh analysis</span></div>;
 }
 
 function target(c: GuidanceClaim): string {
@@ -78,8 +79,9 @@ function target(c: GuidanceClaim): string {
 function SaidDelivered({ symbol }: { symbol: string }) {
   const { data, error, loading, reload } = useApi<Seeded<Ledger>>(`/api/research/${encodeURIComponent(symbol)}?part=ledger`);
   const [all, setAll] = useState(false);
-  const testable = data?.rows.filter((r) => ["met", "missed", "exceeded", "not_yet"].includes(r.evaluation.status)) ?? [];
-  const rest = data?.rows.filter((r) => r.evaluation.status === "insufficient") ?? [];
+  const contested = (r: LedgerRow) => r.evaluation.status === "insufficient" && r.evaluation.range != null;
+  const testable = data?.rows.filter((r) => r.evaluation.status !== "insufficient" || contested(r)) ?? [];
+  const rest = data?.rows.filter((r) => r.evaluation.status === "insufficient" && !contested(r)) ?? [];
   return (
     <section className="sect" id="said" style={{ scrollMarginTop: 44 }}>
       <div className="sect-h"><h2>Said vs delivered</h2></div>
@@ -111,7 +113,7 @@ function Claim({ row, basis }: { row: LedgerRow; basis: Basis }) {
   return (
     <article className="claim">
       <div className="claim-head">
-        <span className={`verdict v-${e.status}`}>{VERDICT[e.status]}</span>
+        <span className={`verdict v-${e.status}`}>{e.status === "insufficient" && e.range ? "Depends on definition" : VERDICT[e.status]}</span>
         <span>{METRIC[c.metric]}</span>
         {c.periodText && <span>· {c.periodText}{c.periodInferred ? " (from prior sentence)" : ""}</span>}
       </div>
@@ -119,11 +121,13 @@ function Claim({ row, basis }: { row: LedgerRow; basis: Basis }) {
       {e.actual && (
         <div className="versus">
           <div><span>Guided</span><b>{target(c)}</b></div>
-          <div><span>Filed, {e.actual.label}</span><b>{money ? `₹${fmtCr(e.actual.value)} Cr` : `${e.actual.value}%`}</b></div>
-          <div><span>Gap</span><b>{money ? (e.variance ? `₹${fmtCr(e.variance)} Cr` : "—") : e.variance ? `${e.variance > 0 ? "+" : ""}${e.variance} pts` : "In band"}</b></div>
+          <div><span>Filed, {e.actual.label}</span><b>{e.status === "insufficient" && e.range ? `${e.range.low}–${e.range.high}%` : money ? `₹${fmtCr(e.actual.value)} Cr` : `${e.actual.value}%`}</b></div>
+          <div><span>Gap</span><b>{e.status === "insufficient" ? "—" : money ? (e.variance ? `₹${fmtCr(e.variance)} Cr` : "—") : e.variance ? `${e.variance > 0 ? "+" : ""}${e.variance} pts` : "In band"}</b></div>
         </div>
       )}
-      <p className="reason">{e.actual ? `${e.actual.formula}, ${basis}.` : e.reason}</p>
+      <p className="reason">
+        {e.status === "insufficient" ? e.reason : e.actual ? `${e.actual.formula}, ${basis}.${e.range ? ` Holds across ${e.range.low}% to ${e.range.high}% on ${e.range.basisTested}.` : ""}` : e.reason}
+      </p>
       <div className="cites">
         <Cite source={row.source} label={`${c.speaker}, ${row.callLabel}, p.${c.page}`} />
         {e.actual && <Cite source={e.actual.source} label={`Actual: ${e.actual.label}`} />}

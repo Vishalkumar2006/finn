@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateClaim, extractClaims, managementSpeakers, parsePeriod, parseTurns, parseValue } from "@/lib/domain/guidance";
+import { evaluateClaim, evaluateRobust, extractClaims, managementPages, managementSpeakers, parsePeriod, parseTurns, parseValue } from "@/lib/domain/guidance";
 import { chunkPages, search, supported, unverifiedNumbers } from "@/lib/domain/retrieval";
 import { canonicalUrl, parseDocuments } from "@/lib/sources/screener";
 import { fiscalLabel } from "@/lib/domain/metrics";
@@ -63,6 +63,31 @@ describe("guidance evaluation", () => {
   });
 });
 
+// Real case: Supreme FY26 was 13.85% to 14.77% depending on definition, against 14.5% to 15% guided.
+describe("robust verdicts", () => {
+  const f = (basis: "consolidated" | "standalone", ebitda: number, otherIncome: number): PeriodFacts => ({ ...facts("2026-03-31", "FY", 1000, ebitda), basis, otherIncome });
+  const c = claim({});
+  it("gives no verdict when definitions disagree, and shows the range", () => {
+    const e = evaluateRobust(c, [f("consolidated", 138.5, 4)], [f("standalone", 138.5, 9.2)], "2026-03-31");
+    expect(e.status).toBe("insufficient");
+    expect(e.range).toMatchObject({ low: 13.85, high: 14.77 });
+    expect(e.reason).toMatch(/Depends on the definition/);
+  });
+  it("keeps the verdict when every definition agrees", () => {
+    const e = evaluateRobust(c, [f("consolidated", 120, 4)], [f("standalone", 122, 5)], "2026-03-31");
+    expect(e.status).toBe("missed");
+    expect(e.range).toMatchObject({ low: 12, high: 12.7 });
+  });
+  it("does not add other income to non-EBITDA metrics", () => {
+    const e = evaluateRobust(claim({ metric: "pat_margin", low: 4, high: 6 }), [f("consolidated", 100, 500)], null, "2026-03-31");
+    expect(e.status).toBe("met");
+    expect(e.range).toBeUndefined();
+  });
+  it("passes through an untestable claim unchanged", () => {
+    expect(evaluateRobust(claim({ period: null }), series, null, "2026-03-31").status).toBe("insufficient");
+  });
+});
+
 describe("guidance parsing", () => {
   it("reads ranges and floors", () => {
     expect(parseValue("EBITDA margin between 14.5% to 15%")).toMatchObject({ low: 14.5, high: 15, unit: "%" });
@@ -114,6 +139,28 @@ describe("transcript reading", () => {
   it("quotes are verbatim substrings of the document", () => {
     const flat = transcript.join(" ").replace(/\s+/g, " ");
     for (const c of extractClaims(transcript, "2026-05-10")) expect(flat).toContain(c.quote);
+  });
+  // Regression from a real transcript: a finished year's reported figure was being scored as if it were guidance.
+  it("does not treat a period that already ended as guidance", () => {
+    const pages = ["Ravi Kumar: Looking at it, we expect FY25 revenue growth of 9% was a landmark.\nRavi Kumar: We expect revenue growth of 12% in FY28 for the company."];
+    const c = extractClaims(pages, "2026-05-10");
+    expect(c.map((x) => x.quote)).toEqual(["We expect revenue growth of 12% in FY28 for the company."]);
+  });
+  // Regression from a real Bajaj Finance transcript: AUM guidance was being scored against revenue.
+  it("does not read AUM or volume growth as revenue growth", () => {
+    const pages = [
+      "Ravi Kumar: We expect the top line growth or AUM growth will gravitate between 22% and 23% on a full year basis.\nRavi Kumar: We expect sales volume growth of 20% in FY28.",
+    ];
+    expect(extractClaims(pages, "2026-05-10").every((c) => c.metric === "other")).toBe(true);
+  });
+  it("cites the page a sentence is on when a turn crosses a page break", () => {
+    const pages = ["Ravi Kumar: Thank you for joining the call today.", "We expect EBITDA margin of 16% in FY28 for the company.\nRavi Kumar: Thanks."];
+    expect(extractClaims(pages, "2026-05-10")[0].page).toBe(2);
+  });
+  it("removes analysts from searchable text", () => {
+    const m = managementPages(transcript).join(" ");
+    expect(m).toContain("16% to 17%");
+    expect(m).not.toContain("Do you expect");
   });
   it("flags a product-line heading as narrower scope", () => {
     const c = extractClaims(transcript, "2026-05-10").find((x) => x.metric === "revenue_growth");

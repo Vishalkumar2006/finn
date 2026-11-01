@@ -18,9 +18,9 @@ export interface Settings {
 const DEFAULTS: Settings = {
   symbols: DEFAULT_PORTFOLIO.map((p) => p.symbol),
   names: Object.fromEntries(DEFAULT_PORTFOLIO.map((p) => [p.symbol, p.name])),
-  pricePct: 3,
+  pricePct: 4,
   volumeMultiple: 2,
-  categories: ["results", "M&A", "management_change", "litigation", "pledging", "fund_raise"],
+  categories: ["results", "M&A", "management_change", "litigation", "pledging"],
   readAlerts: [],
 };
 

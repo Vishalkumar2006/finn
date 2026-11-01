@@ -1,4 +1,4 @@
-import { evaluateClaim, extractClaims, splitSentences, type Evaluation } from "../domain/guidance";
+import { evaluateRobust, extractClaims, managementPages, splitSentences, type Evaluation } from "../domain/guidance";
 import { marginPct, pctChange, priorQuarterEnd, ratio, yearAgoEnd } from "../domain/metrics";
 import { chunkPages, search, supported, tokenize, unverifiedNumbers, type Hit } from "../domain/retrieval";
 import type { Basis, GuidanceClaim, PeriodFacts, SourceRef } from "../domain/types";
@@ -219,6 +219,9 @@ export async function getLedger(symbol: string, quarters = 6): Promise<Ledger> {
   const [{ docs }, fin] = await Promise.all([getDocuments(symbol), getFinancials(symbol)]);
   const transcripts = docs.filter((d) => d.kind === "transcript" && d.callDate).slice(0, quarters);
   const series = [...fin.quarters, ...fin.years];
+  const otherBasis = fin.availableBases.find((b) => b !== fin.basis);
+  const otherFin = otherBasis ? await getFinancials(symbol, otherBasis).catch(() => null) : null;
+  const otherSeries = otherFin ? [...otherFin.quarters, ...otherFin.years] : null;
   const latestEnd = fin.quarters[0]?.periodEnd ?? null;
   const read = await mapLimit(transcripts, 3, async (d) => {
     try {
@@ -234,7 +237,7 @@ export async function getLedger(symbol: string, quarters = 6): Promise<Ledger> {
   for (const r of read) {
     for (const claim of r.claims) {
       rows.push({
-        claim, evaluation: evaluateClaim(claim, series, latestEnd), callLabel: r.d.label,
+        claim, evaluation: evaluateRobust(claim, series, otherSeries, latestEnd), callLabel: r.d.label,
         source: { url: r.d.url, title: `Earnings call transcript, ${r.d.label}`, docType: "transcript", page: claim.page, excerpt: claim.quote, filedAt: r.d.callDate ?? undefined },
       });
     }
@@ -249,7 +252,7 @@ export async function getLedger(symbol: string, quarters = 6): Promise<Ledger> {
   return {
     symbol, basis: fin.basis, rows: top, counts,
     transcriptsRead: read.map((r) => ({ label: r.d.label, url: r.d.url, pages: r.pages, claims: r.claims.length, error: r.error })),
-    note: "Statements found by rule-based extraction from transcripts. Verdicts are computed only from filed XBRL numbers.",
+    note: "Statements found by rule-based extraction from transcripts. Verdicts use filed XBRL numbers only, and must hold on every definition the filings support.",
   };
 }
 
@@ -307,10 +310,15 @@ export async function ask(symbol: string, question: string, previous?: string): 
     d.pages.length ? `${d.d.label} ${d.d.kind === "transcript" ? "transcript" : "annual report"}: ${d.pages.length} of ${d.pageCount} pages searched`
       : `${d.d.label}: not readable (${"error" in d ? d.error : d.scanned ? "scanned" : "empty"})`);
   const byId = new Map(docs.map((d) => [d.d.id, d.d]));
-  const chunks = docs.flatMap((d) => chunkPages(d.d.id, d.pages));
-  const query = previous ? `${question} ${previous}` : question;
-  const hits = search(chunks, query, 5);
-  if (!supported(hits[0], question)) {
+  const chunks = docs.flatMap((d) => chunkPages(d.d.id, d.d.kind === "transcript" ? managementPages(d.pages) : d.pages));
+  // A follow-up stands alone if it can. Only a vague one ("why was that?") borrows the previous question's terms.
+  let hits = search(chunks, question, 5);
+  let query = question;
+  if (previous && !supported(hits[0], question)) {
+    query = `${question} ${previous}`;
+    hits = search(chunks, query, 5);
+  }
+  if (!supported(hits[0], query)) {
     return {
       mode: "abstain",
       answer: [chunks.length ? "The documents searched do not support an answer to this." : "No readable primary documents were found for this company."],
@@ -327,10 +335,10 @@ export async function ask(symbol: string, question: string, previous?: string): 
       if (!bad.length && cited.length && cited.every((n) => n >= 1 && n <= hits.length)) {
         return { mode: "llm", answer: [text], citations, coverage };
       }
-      return { mode: "extractive", answer: extractive(hits, citations, question), citations, coverage, llmRejected: bad.length ? `Model answer rejected: ${bad.join(", ")} not in sources.` : "Model answer rejected: citations missing." };
+      return { mode: "extractive", answer: extractive(hits, citations, query), citations, coverage, llmRejected: bad.length ? `Model answer rejected: ${bad.join(", ")} not in sources.` : "Model answer rejected: citations missing." };
     }
   }
-  return { mode: "extractive", answer: extractive(hits, citations, question), citations, coverage };
+  return { mode: "extractive", answer: extractive(hits, citations, query), citations, coverage };
 }
 
 function extractive(hits: Hit[], _c: SourceRef[], question: string): string[] {
@@ -409,8 +417,12 @@ export function buildCase(fin: Financials, ledger: Ledger | null): CasePoint[] {
     pts.push({ side: de <= 0.5 ? "bull" : de >= 1 ? "bear" : "bull", text: `Debt-to-equity ${de}× at ${fy.label} year-end.`, source: fy.source });
   }
   for (const r of ledger?.rows ?? []) {
-    if (r.evaluation.status === "missed" && r.evaluation.actual) pts.push({ side: "bear", text: `Missed guidance from the ${r.callLabel} call: ${r.evaluation.actual.value}% against ${r.claim.low}% for ${r.claim.periodText}.`, source: r.source });
-    if ((r.evaluation.status === "met" || r.evaluation.status === "exceeded") && r.evaluation.actual) pts.push({ side: "bull", text: `Delivered on guidance from the ${r.callLabel} call: ${r.evaluation.actual.value}% against ${r.claim.low}% for ${r.claim.periodText}.`, source: r.source });
+    const a = r.evaluation.actual;
+    if (!a) continue;
+    const said = r.claim.high != null && r.claim.high !== r.claim.low ? `${r.claim.low}% to ${r.claim.high}%` : `${r.claim.low}%`;
+    if (r.claim.unit !== "%") continue;
+    if (r.evaluation.status === "missed") pts.push({ side: "bear", text: `Missed guidance from the ${r.callLabel} call: ${a.value}% against ${said} for ${a.label}.`, source: r.source });
+    if (r.evaluation.status === "met" || r.evaluation.status === "exceeded") pts.push({ side: "bull", text: `Delivered on guidance from the ${r.callLabel} call: ${a.value}% against ${said} for ${a.label}.`, source: r.source });
   }
   return pts;
 }

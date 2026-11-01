@@ -8,6 +8,7 @@ export interface Turn {
   text: string;
   page: number;
   section?: string; // a product-line heading seen inside this turn, e.g. "Refrigerators:"
+  spans: { page: number; text: string }[]; // where the text actually sits, since turns cross page breaks
 }
 
 const SPEAKER = /^([A-Z][A-Za-z.'-]+(?: [A-Z][A-Za-z.'-]*){0,4})\s*:\s*(.*)$/;
@@ -32,12 +33,13 @@ export function parseTurns(pages: string[]): Turn[] {
       const isPerson = m && !NOT_SPEAKERS.test(m[1]) && !PRODUCT_HEADING.test(m[1]) && ((counts.get(m[1]) ?? 0) > 1 || /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(m[1]));
       if (isPerson) {
         if (cur) turns.push(cur);
-        cur = { speaker: m[1], text: m[2], page: i + 1 };
+        cur = { speaker: m[1], text: m[2], page: i + 1, spans: [{ page: i + 1, text: m[2] }] };
       } else if (m && cur && !NOT_SPEAKERS.test(m[1])) {
         turns.push(cur);
-        cur = { speaker: cur.speaker, text: m[2], page: i + 1, section: m[1] };
+        cur = { speaker: cur.speaker, text: m[2], page: i + 1, section: m[1], spans: [{ page: i + 1, text: m[2] }] };
       } else if (cur) {
         cur.text += ` ${line.trim()}`;
+        cur.spans.push({ page: i + 1, text: line.trim() });
       }
     }
   });
@@ -73,9 +75,34 @@ export function managementSpeakers(turns: Turn[]): Set<string> {
   return mgmt;
 }
 
+/** Per-page text with analysts and the moderator removed. Falls back to all text if speakers cannot be told apart. */
+export function managementPages(pages: string[]): string[] {
+  const turns = parseTurns(pages);
+  const mgmt = managementSpeakers(turns);
+  if (!mgmt.size) return pages;
+  const out = pages.map(() => "");
+  for (const t of turns) {
+    if (!mgmt.has(t.speaker)) continue;
+    for (const sp of t.spans) out[sp.page - 1] += ` ${sp.text}`;
+  }
+  return out;
+}
+
+/** The page a sentence starts on. A quote's page is what a reader will check, so it must not be the turn's start. */
+function pageOf(t: Turn, sentence: string): number {
+  const squash = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const head = squash(sentence).slice(0, 24);
+  let acc = "";
+  for (const sp of t.spans) {
+    acc += squash(sp.text);
+    if (acc.includes(head)) return sp.page;
+  }
+  return t.page;
+}
+
 /* ---------- guidance candidates ---------- */
 
-const FORWARD = /\b(guidance|guide[ds]?|we (would |should |will |shall )?(expect|target|aim|anticipate|plan|estimate|intend|are confident|are targeting|are looking at|aspire)|(expect|target|outlook|aspiration|ambition) (of|is|to|for)|should be (able|in|around|at)|will be (in the range|around|at|between)|would be (in the range|around|at|between)|looking at|going forward|we will (deliver|achieve|grow|maintain|sustain|invest|spend)|likely to|on track to)\b/i;
+const FORWARD = /\b(guidance|guide[ds]?|we (would |should |will |shall )?(expect|target|aim|anticipate|plan|estimate|intend|are confident|are targeting|are looking at|aspire)|(expect|target|outlook|aspiration|ambition) (of|is|to|for)|should be (able|in|around|at)|will be (in the range|around|at|between)|would be (in the range|around|at|between)|we are looking at|going forward|we will (deliver|achieve|grow|maintain|sustain|invest|spend)|likely to|on track to)\b/i;
 const BACKWARD = /\b(in line with|well within|have already|has already|already (pumped|spent|invested)|if you (remove|exclude)|last (quarter|year)|previous (quarter|year)|we (delivered|reported|achieved|grew|recorded|posted|saw)|was (up|down|at)|were (up|down|at)|has (grown|increased|declined)|for the quarter ended)\b/i;
 const FILLER = /\bsafe harbou?r|forward[- ]looking statements?|actual results may differ|risks and uncertainties\b/i;
 
@@ -88,7 +115,9 @@ function metricOf(s: string): GuidanceMetric {
   if (/ebit\s*margin/.test(t)) return "ebit_margin";
   if (/pat\s*margin|net (profit )?margin/.test(t)) return "pat_margin";
   if (/\bcapex\b|capital expenditure/.test(t)) return "capex";
-  if (/(revenue|top ?line|sales|income).{0,50}(grow|growth|cagr|increase)|(grow|growth|cagr).{0,50}(revenue|top ?line|sales)/.test(t)) return "revenue_growth";
+  // A lender's AUM or a manufacturer's volume is not revenue, even in a sentence that also says "top line".
+  if (/\b(aum|assets under|loan book|loan growth|advances|disbursements?|deposits?|volumes?|tonnage|order ?book)\b/.test(t)) return "other";
+  if (/(revenue|top ?line|sales).{0,50}(grow|growth|cagr|increase)|(grow|growth|cagr).{0,50}(revenue|top ?line|sales)/.test(t)) return "revenue_growth";
   return "other";
 }
 
@@ -194,11 +223,13 @@ export function extractClaims(pages: string[], callDate: string): GuidanceClaim[
         const prev = parsePeriod(sentences[si - 1], callDate);
         if (prev.period) { period = prev.period; text = prev.text; periodInferred = true; }
       }
+      // A target period that ended before the call is a report or a recollection, not guidance.
+      if (period && periodEndOf(period) < callDate) return;
       const scoped = t.section ? `Said under the "${t.section}" heading, not the whole company.` : si > 0 && SCOPED.test(sentences[si - 1]) ? "Preceding sentence is about part of the business." : null;
       out.push({
         metric, ...v, period, periodText: text, periodInferred,
         comparison: /sequential|quarter[- ]on[- ]quarter|\bq-?o-?q\b/i.test(s) ? "qoq" : /growth$/.test(metric) ? "yoy" : null,
-        basisNote: basisNote(s) ?? scoped, quote: s, speaker: t.speaker, page: t.page,
+        basisNote: basisNote(s) ?? scoped, quote: s, speaker: t.speaker, page: pageOf(t, s),
       });
     });
   }
@@ -220,6 +251,7 @@ export interface Evaluation {
   actual: Actual | null;
   variance: number | null; // percentage points beyond the guided band; 0 when inside it
   reason: string;
+  range?: { low: number; high: number; basisTested: string }; // actuals across definitions, when more than one applies
 }
 
 const periodEndOf = (p: FiscalPeriod) => {
@@ -228,11 +260,12 @@ const periodEndOf = (p: FiscalPeriod) => {
   return q === 1 ? `${p.fy - 1}-06-30` : q === 2 ? `${p.fy - 1}-09-30` : q === 3 ? `${p.fy - 1}-12-31` : `${p.fy}-03-31`;
 };
 
-function actualFor(c: GuidanceClaim, end: string, cur: PeriodFacts, series: PeriodFacts[]): Actual | { missing: string } {
+function actualFor(c: GuidanceClaim, end: string, cur: PeriodFacts, series: PeriodFacts[], withOtherIncome = false): Actual | { missing: string } {
   const label = fiscalLabel(end, cur.kind);
   switch (c.metric) {
     case "ebitda_margin": {
-      const v = marginPct(cur.ebitda, cur.revenue);
+      const v = marginPct(cur.ebitda != null && withOtherIncome ? cur.ebitda + (cur.otherIncome ?? 0) : cur.ebitda, cur.revenue);
+      if (withOtherIncome) return v == null ? { missing: "" } : { value: v, label, formula: "EBITDA including other income ÷ revenue from operations", source: cur.source };
       return v == null ? { missing: "EBITDA margin cannot be derived from the filing." } : { value: v, label, formula: "EBITDA (derived) ÷ revenue from operations", source: cur.source };
     }
     case "ebit_margin": {
@@ -288,3 +321,45 @@ export function evaluateClaim(c: GuidanceClaim, series: PeriodFacts[], latestEnd
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Companies define EBITDA differently and report on two bases. A verdict is given only if it holds across every
+ * definition the filings support; otherwise the range is shown and no verdict is given.
+ */
+export function evaluateRobust(c: GuidanceClaim, primary: PeriodFacts[], other: PeriodFacts[] | null, latestEnd: string | null): Evaluation {
+  const base = evaluateClaim(c, primary, latestEnd);
+  if (!base.actual || !c.period) return base;
+  const end = periodEndOf(c.period);
+  const variants: { value: number; note: string }[] = [{ value: base.actual.value, note: "" }];
+  for (const series of other ? [primary, other] : [primary]) {
+    const cur = series.find((p) => p.periodEnd === end && p.kind === c.period!.kind);
+    if (!cur) continue;
+    if (series !== primary) {
+      const a = actualFor(c, end, cur, series);
+      if (!("missing" in a)) variants.push({ value: a.value, note: "other basis" });
+    }
+    if (c.metric === "ebitda_margin") {
+      const a = actualFor(c, end, cur, series, true);
+      if (!("missing" in a)) variants.push({ value: a.value, note: "incl. other income" });
+    }
+  }
+  const values = variants.map((v) => v.value);
+  const low = Math.min(...values), high = Math.max(...values);
+  const range = { low, high, basisTested: other ? "both bases" : "the filed basis" };
+  const verdicts = new Set(values.map((v) => verdictOf(c, v)));
+  if (verdicts.size > 1) {
+    return {
+      status: "insufficient", actual: base.actual, variance: null, range,
+      reason: `Depends on the definition: ${low}% to ${high}% across ${range.basisTested}, with and without other income. FINN gives no verdict.`,
+    };
+  }
+  return { ...base, range: low !== high ? range : undefined };
+}
+
+function verdictOf(c: GuidanceClaim, value: number): GuidanceStatus {
+  const hi = c.high;
+  const tolerance = c.floor || (hi != null && hi !== c.low) ? 0 : c.unit === "INR" ? c.low! * 0.02 : 0.5;
+  if (value < c.low! - tolerance) return "missed";
+  if (hi != null && value > hi + tolerance) return "exceeded";
+  return "met";
+}

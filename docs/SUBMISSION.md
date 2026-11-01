@@ -9,8 +9,8 @@ Hello,
 
 My submission for the FINN build challenge:
 
-- Prototype: [DEPLOYED URL]
-- Repository: [GITHUB URL]
+- Prototype: https://finn-delta-eight.vercel.app
+- Repository: https://github.com/Vishalkumar2006/finn
 - AI build history: [ATTACHMENT OR LINK]. I built this with Claude Code.
 
 **What I built**
@@ -31,7 +31,7 @@ FINN is a mobile-first web app with one journey: an important event, why it matt
 
 **Trade-offs**
 
-Rule-based guidance extraction is cheap and auditable, but it leaves most statements as "can't test". Across the 24 companies in the snapshot, only two companies get clean verdicts (L&T and HAL), and Supreme is definition-dependent. Reading scored claims in context caught several false verdicts, each now covered by a test. The rules can still make mistakes on companies I haven't read.
+Rule-based guidance extraction is cheap and auditable, but it leaves most statements as "can't test". Across the 24 companies in the snapshot, only two companies get clean verdicts (L&T and HAL), and Supreme is definition-dependent. Reading scored claims in context caught several false verdicts, including one found while testing an unfamiliar ticker in production. Each is now covered by a test, but the rules can still make mistakes on companies I haven't read.
 
 I used NSE rather than BSE because BSE's API refused automated access, and I did not disguise the client. LinkedIn is login-walled, so bios come from the filing itself.
 
@@ -45,7 +45,7 @@ Use a cheap model for guidance extraction, validated against source text, to rai
 
 **Not yet verified**
 
-[UPDATE BEFORE SENDING: scheduled job, LLM layer, and any deployment limits found.]
+I tested the public deployment in headless Chrome at phone and desktop widths, and NSE responded from Vercel. There is no unattended monitoring: data is pulled when a page opens, and the saved snapshots that back it up are refreshed by hand. The optional model layer has not been run against a real provider, and answers on the deployed app are direct quotes.
 
 Regards,
 [NAME]

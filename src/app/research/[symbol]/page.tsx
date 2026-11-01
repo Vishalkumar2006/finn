@@ -327,7 +327,7 @@ function Ask({ symbol }: { symbol: string }) {
               <div className="qa-a">{t.a.answer.map((x, j) => <p key={j}>{x}</p>)}</div>
               <div className="cites">{t.a.citations.map((c, j) => <Cite key={j} source={c} label={`[${j + 1}] ${c.docType === "annual_report" ? "AR" : "Call"} ${c.title.split(", ").at(-1)} p.${c.page}`} />)}</div>
               <p className="mode">
-                {t.a.mode === "llm" ? "Written by a model from these passages; every number checked against them." : t.a.mode === "extractive" ? `Direct quotes, best match. ${t.a.llmConfigured ? "" : "No model is configured, so nothing is paraphrased."}` : "No answer given."}
+                {t.a.mode === "llm" ? `Model-synthesized (${t.a.model}) from the cited passages. Numbers and wording were checked against them automatically; open a source to confirm. The model does not see filed results: outcomes are in Said vs delivered.` : t.a.mode === "extractive" ? `Extractive: direct quotes, best match, nothing paraphrased.` : `No answer given${t.a.model ? ` (assessed by ${t.a.model})` : ""}.`}
                 {t.a.llmRejected ? ` ${t.a.llmRejected}` : ""}
               </p>
               <details className="muted" style={{ marginTop: 4 }}><summary>What was searched</summary>{t.a.coverage.join("; ")}</details>

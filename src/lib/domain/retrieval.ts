@@ -10,13 +10,14 @@ export interface Hit extends Chunk {
   score: number;
 }
 
-const STOP = new Set("a an and are as at be been but by can could did do does for from had has have how i if in into is it its of on or our so than that the their them there these they this to was we were what when where which who why will with would you your about company management tell me give please".split(" "));
+const STOP = new Set("a an and are as at be been but by can could did do does for from had has have how i if in into is it its of on or our so than that the their them there these they this to was we were what when where which who why will with would you your about company management tell me give please evidence support supports contradict contradicts recent between said saying say".split(" "));
 
 const SYNONYMS: Record<string, string[]> = {
   revenue: ["sales", "topline", "income"], sales: ["revenue", "topline"],
   profit: ["pat", "ebitda", "earnings"], margin: ["margins", "ebitda", "profitability"], margins: ["margin", "ebitda"],
   debt: ["borrowings", "leverage", "debt-equity"], capex: ["capital", "expenditure", "capacity"],
-  guidance: ["expect", "outlook", "target", "guide"], outlook: ["expect", "guidance"], growth: ["grow", "growing", "grew"],
+  guidance: ["expect", "outlook", "target", "guide"], outlook: ["expect", "guidance", "forward", "visibility"], growth: ["grow", "growing", "grew"],
+  expectations: ["expect", "guidance", "target"], future: ["forward", "plan", "planned"], expenditure: ["capex"], changed: ["earlier", "revised", "now"],
   risk: ["risks", "challenge", "headwind", "concern"], risks: ["risk", "headwind", "challenge"],
   segment: ["segments", "division", "vertical", "business"], segments: ["segment", "vertical", "division"],
   business: ["segments", "operations", "products"], cash: ["cashflow", "receivables", "working"],
@@ -40,6 +41,10 @@ export function chunkPages(docId: string, pages: string[], size = 140): Chunk[] 
   });
   return out;
 }
+
+/** Legal disclaimers and audit or ESG forms match words like "outlook" and "future" but never carry evidence. */
+const BOILERPLATE = /forward[- ]looking statements?|safe harbou?r|actual results (could|may|might) (materially )?differ|audit evidence|assurance standard|essential indicator|internal financial controls/i;
+export const dropBoilerplate = (chunks: Chunk[]) => chunks.filter((c) => !BOILERPLATE.test(c.text));
 
 export function search(chunks: Chunk[], query: string, k = 6): Hit[] {
   const base = tokenize(query);

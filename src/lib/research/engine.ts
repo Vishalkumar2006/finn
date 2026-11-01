@@ -1,6 +1,7 @@
 import { evaluateRobust, extractClaims, managementPages, splitSentences, type Evaluation } from "../domain/guidance";
 import { marginPct, pctChange, priorQuarterEnd, ratio, yearAgoEnd } from "../domain/metrics";
-import { chunkPages, search, supported, tokenize, unverifiedNumbers, type Hit } from "../domain/retrieval";
+import { checkAnswer, parseModelAnswer, renumber, sanitisePassage } from "../domain/answerCheck";
+import { chunkPages, dropBoilerplate, search, supported, tokenize, type Hit } from "../domain/retrieval";
 import type { Basis, GuidanceClaim, PeriodFacts, SourceRef } from "../domain/types";
 import { cached, mapLimit, SourceError } from "../sources/http";
 import { fetchAnnouncements, fetchAnnualReports, fetchIntegratedResults, fetchLegacyResults, type ResultFiling } from "../sources/nse";
@@ -9,7 +10,8 @@ import { fetchDocumentIndex, searchScreener } from "../sources/screener";
 import { classifyEntity, parseResults } from "../sources/xbrl";
 import { fetchHistory, searchYahoo } from "../sources/yahoo";
 import { get } from "../sources/http";
-import { complete, llmEnabled } from "./llm";
+import { allowLlmCall } from "./guard";
+import { complete, llmEnabled, llmModelName, promptVersion } from "./llm";
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -193,6 +195,8 @@ export async function getDocuments(symbol: string): Promise<{ docs: ResearchDoc[
     } catch {
       discovery = "NSE filings (Screener unavailable)";
     }
+    // An empty list after a source failure must not be cached, or a brief outage would hide documents for 12 hours.
+    if (!out.length) throw new SourceError("documents", 404, `No transcripts or annual reports found for ${symbol} right now.`);
     out.sort((a, b) => (b.callDate ?? "").localeCompare(a.callDate ?? ""));
     return { docs: out, discovery };
   });
@@ -316,7 +320,7 @@ function toCitation(h: Hit, d: ResearchDoc): SourceRef {
 }
 
 function bestExcerpt(text: string): string {
-  return text.length > 700 ? `${text.slice(0, 700).replace(/\s+\S*$/, "")}…` : text;
+  return text.length > 1400 ? `${text.slice(0, 1400).replace(/\s+\S*$/, "")}…` : text;
 }
 
 /** The sentence of a passage that best matches the question. Quoted verbatim, never rewritten. */
@@ -337,44 +341,104 @@ export interface Answer {
   citations: SourceRef[];
   coverage: string[];
   llmRejected?: string;
+  model?: string;
+}
+
+/** Enough different documents for "how has this changed" to be answerable: best passages, no more than 3 per document. */
+export function diversify(hits: Hit[], k = 8, perDoc = 3): Hit[] {
+  const counts = new Map<string, number>();
+  const out: Hit[] = [];
+  for (const h of hits) {
+    const n = counts.get(h.docId) ?? 0;
+    if (n >= perDoc) continue;
+    counts.set(h.docId, n + 1);
+    out.push(h);
+    if (out.length === k) break;
+  }
+  return out;
+}
+
+const REASON: Record<string, string> = {
+  timeout: "The model did not respond in time.",
+  provider: "The model is unavailable right now.",
+  empty: "The model returned nothing usable.",
+};
+
+type LlmOutcome = Pick<Answer, "mode" | "answer" | "citations" | "model"> | { rejected: string };
+
+/** Model output is only ever text over retrieved passages. Filed numbers and verdicts never pass through here. */
+async function synthesize(question: string, previous: string | undefined, passages: Hit[], cites: SourceRef[]): Promise<LlmOutcome> {
+  const blocks = passages.map((h, i) => {
+    const meta = cites[i].title.replace(/[<>"]/g, "");
+    return `<passage id="${i + 1}" source="${meta}, page ${h.page}">\n${sanitisePassage(h.text)}\n</passage>`;
+  }).join("\n");
+  const context = previous ? `Earlier question, for context only: ${previous.slice(0, 400)}\n` : "";
+  const r = await complete(`${blocks}\n\n${context}Question: ${question}`);
+  if (!r.ok) return { rejected: REASON[r.reason] ?? REASON.provider };
+  const parsed = parseModelAnswer(r.text);
+  if (!parsed) return { rejected: "The model's reply was malformed." };
+  // The source label counts as evidence, so "the May 2026 call said" can pass.
+  const checked = checkAnswer(parsed, passages.map((h, i) => `${cites[i].title}. ${h.text}`));
+  if (!checked.ok) {
+    console.error(`llm: answer rejected: ${checked.reason}`);
+    return { rejected: `A model answer was rejected: ${checked.reason}.` };
+  }
+  const model = r.model;
+  if (checked.status === "abstain") return { mode: "abstain", answer: [`The documents searched do not answer this. ${checked.reason}`], citations: [], model };
+  const { lines, used } = renumber(checked.claims);
+  return { mode: "llm", answer: lines, citations: used.map((n) => cites[n - 1]), model };
 }
 
 export async function ask(symbol: string, question: string, previous?: string): Promise<Answer> {
-  const docs = await corpus(symbol);
+  let docs: Awaited<ReturnType<typeof corpus>>;
+  try {
+    docs = await corpus(symbol);
+  } catch (e) {
+    return { mode: "abstain", answer: [e instanceof Error ? e.message : "Documents could not be found."], citations: [], coverage: [] };
+  }
   const coverage = docs.map((d) =>
     d.pages.length ? `${d.d.label} ${d.d.kind === "transcript" ? "transcript" : "annual report"}: ${d.pages.length} of ${d.pageCount} pages searched`
       : `${d.d.label}: not readable (${"error" in d ? d.error : d.scanned ? "scanned" : "empty"})`);
   const byId = new Map(docs.map((d) => [d.d.id, d.d]));
-  const chunks = docs.flatMap((d) => chunkPages(d.d.id, d.d.kind === "transcript" ? managementPages(d.pages) : d.pages));
+  const chunks = dropBoilerplate(docs.flatMap((d) => chunkPages(d.d.id, d.d.kind === "transcript" ? managementPages(d.pages) : d.pages)));
   // A follow-up stands alone if it can. Only a vague one ("why was that?") borrows the previous question's terms.
-  let hits = search(chunks, question, 5);
+  let hits = search(chunks, question, 24);
   let query = question;
   if (previous && !supported(hits[0], question)) {
     query = `${question} ${previous}`;
-    hits = search(chunks, query, 5);
+    hits = search(chunks, query, 24);
   }
-  if (!supported(hits[0], query)) {
-    return {
-      mode: "abstain",
-      answer: [chunks.length ? "The documents searched do not support an answer to this." : "No primary documents could be read for this company just now. Check what was searched below, then try again."],
-      citations: [], coverage,
-    };
+  const abstain = (llmRejected?: string): Answer => ({
+    mode: "abstain",
+    answer: [llmRejected && chunks.length ? "No passage matches closely enough to quote, and the model that could assess it did not give a usable answer. Try a more specific question." : chunks.length ? "The documents searched do not support an answer to this." : "No primary documents could be read for this company just now. Check what was searched below, then try again."],
+    citations: [], coverage, llmRejected,
+  });
+  if (!hits.length) return abstain();
+  const top = hits.slice(0, 5);
+  const citations = top.map((h) => toCitation(h, byId.get(h.docId)!));
+  // Quoting needs a close keyword match. A model can judge analytic questions, so the gate only applies without one.
+  const fallback = (llmRejected?: string): Answer =>
+    supported(hits[0], query) ? { mode: "extractive", answer: extractive(top, citations, query), citations, coverage, llmRejected } : abstain(llmRejected);
+  if (!llmEnabled()) return fallback();
+  if (!allowLlmCall()) return fallback("The daily model allowance is used up, so model answers are off for now.");
+
+  const passages = diversify(hits);
+  const cites = passages.map((h) => toCitation(h, byId.get(h.docId)!));
+  // Only checked answers are cached. A failure is retried next time, and a repeat question costs nothing.
+  const key = `ask:${promptVersion()}:${llmModelName()}:${symbol}:${query.toLowerCase().replace(/\s+/g, " ").trim()}:${passages.map((h) => `${h.docId}${h.page}`).join()}`;
+  try {
+    const c = await cached(key, 6 * HOUR, async () => {
+      const out = await synthesize(question, previous, passages, cites);
+      if ("rejected" in out) throw new LlmRejected(out.rejected);
+      return out as Exclude<LlmOutcome, { rejected: string }>;
+    });
+    return { ...c.value, coverage };
+  } catch (e) {
+    return fallback(e instanceof LlmRejected ? e.message : REASON.provider);
   }
-  const citations = hits.map((h) => toCitation(h, byId.get(h.docId)!));
-  if (llmEnabled()) {
-    const passages = hits.map((h, i) => `<passage id="${i + 1}" source="${citations[i].title}, page ${h.page}">\n${h.text}\n</passage>`).join("\n");
-    const text = await complete(`${passages}\n\nQuestion: ${question}`);
-    if (text) {
-      const bad = unverifiedNumbers(text, hits.map((h) => h.text).join(" "));
-      const cited = [...text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
-      if (!bad.length && cited.length && cited.every((n) => n >= 1 && n <= hits.length)) {
-        return { mode: "llm", answer: [text], citations, coverage };
-      }
-      return { mode: "extractive", answer: extractive(hits, citations, query), citations, coverage, llmRejected: bad.length ? `Model answer rejected: ${bad.join(", ")} not in sources.` : "Model answer rejected: citations missing." };
-    }
-  }
-  return { mode: "extractive", answer: extractive(hits, citations, query), citations, coverage };
 }
+
+class LlmRejected extends Error {}
 
 function extractive(hits: Hit[], _c: SourceRef[], question: string): string[] {
   const seen = new Set<string>();

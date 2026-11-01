@@ -64,8 +64,14 @@ describe("claim checks", () => {
   it("passes an explicit abstention through", () => {
     expect(checkAnswer({ status: "abstain", claims: [], reason: "No data." }, passages)).toEqual({ ok: true, status: "abstain", reason: "No data." });
   });
-  it("checks every claim, not just the first", () => {
+  it("checks every claim: removes a failing one and reports it", () => {
     const a = { status: "answered" as const, claims: [{ text: "Capital expenditure of Rs. 1,200 crore in FY27.", citations: [1] }, { text: "Revenue reached Rs. 9,999 crore.", citations: [1] }] };
+    const r = checkAnswer(a, passages);
+    expect(r).toMatchObject({ ok: true, status: "answered", removed: 1 });
+    expect(r.ok && r.status === "answered" && r.claims.map((c) => c.text)).toEqual(["Capital expenditure of Rs. 1,200 crore in FY27."]);
+  });
+  it("rejects the answer when no claim survives", () => {
+    const a = { status: "answered" as const, claims: [{ text: "Revenue reached Rs. 9,999 crore.", citations: [1] }, { text: "A buyback was approved.", citations: [] }] };
     expect(checkAnswer(a, passages).ok).toBe(false);
   });
 });

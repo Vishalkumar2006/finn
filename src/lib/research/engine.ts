@@ -364,7 +364,7 @@ const REASON: Record<string, string> = {
   empty: "The model returned nothing usable.",
 };
 
-type LlmOutcome = Pick<Answer, "mode" | "answer" | "citations" | "model"> | { rejected: string };
+type LlmOutcome = Pick<Answer, "mode" | "answer" | "citations" | "model" | "llmRejected"> | { rejected: string };
 
 /** Model output is only ever text over retrieved passages. Filed numbers and verdicts never pass through here. */
 async function synthesize(question: string, previous: string | undefined, passages: Hit[], cites: SourceRef[]): Promise<LlmOutcome> {
@@ -386,7 +386,9 @@ async function synthesize(question: string, previous: string | undefined, passag
   const model = r.model;
   if (checked.status === "abstain") return { mode: "abstain", answer: [`The documents searched do not answer this. ${checked.reason}`], citations: [], model };
   const { lines, used } = renumber(checked.claims);
-  return { mode: "llm", answer: lines, citations: used.map((n) => cites[n - 1]), model };
+  if (checked.removed) console.error(`llm: removed ${checked.removed} claim(s): ${checked.firstProblem}`);
+  const note = checked.removed ? `Checks removed ${checked.removed} claim${checked.removed > 1 ? "s" : ""} that the cited passages did not support, so this answer may be incomplete.` : undefined;
+  return { mode: "llm", answer: lines, citations: used.map((n) => cites[n - 1]), model, llmRejected: note };
 }
 
 export async function ask(symbol: string, question: string, previous?: string): Promise<Answer> {

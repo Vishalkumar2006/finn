@@ -14,7 +14,7 @@ export const ModelAnswer = z.object({
 export type ModelAnswer = z.infer<typeof ModelAnswer>;
 
 export type CheckResult =
-  | { ok: true; status: "answered"; claims: { text: string; citations: number[] }[] }
+  | { ok: true; status: "answered"; claims: { text: string; citations: number[] }[]; removed: number; firstProblem?: string }
   | { ok: true; status: "abstain"; reason: string }
   | { ok: false; reason: string };
 
@@ -118,25 +118,39 @@ const VERDICT = /\b(missed|exceeded|beat|fell short|underdeliver|failed to (meet
 // Synthesis paraphrases, so this can't be strict. It stops claims unrelated to their citation, not subtle misreadings.
 const MIN_OVERLAP = 0.5;
 
+function claimProblem(c: { text: string; citations: number[] }, passages: string[]): string | null {
+  if (!c.citations.length) return "a claim has no citation";
+  if (c.citations.some((n) => n < 1 || n > passages.length)) return "a citation points to no supplied passage";
+  const evidence = c.citations.map((n) => passages[n - 1]).join(" ");
+  const nums = unsupportedNumbers(c.text, evidence);
+  if (nums.length) return `${nums.join(", ")} not in the cited passage`;
+  const names = unknownNames(c.text, evidence);
+  if (names.length) return `${names.slice(0, 3).join(", ")} not in the cited passage`;
+  const dir = directionUnsupported(c.text, evidence);
+  if (dir) return `a claim ${dir}`;
+  const v = c.text.match(VERDICT);
+  if (v && !evidence.toLowerCase().includes(v[0].toLowerCase())) return "the model issued its own verdict";
+  const o = overlap(c.text, evidence);
+  if (o < MIN_OVERLAP) return `a claim is not supported by its citation (${Math.round(o * 100)}% word overlap)`;
+  return null;
+}
+
+/**
+ * Each claim stands or falls alone. Failing claims are removed and counted, so the reader is told, and the answer
+ * is rejected only if none survive. Removal can narrow an answer, which is why the count is shown.
+ */
 export function checkAnswer(a: ModelAnswer, passages: string[]): CheckResult {
   if (a.status === "abstain") return { ok: true, status: "abstain", reason: a.reason ?? "The passages do not answer this." };
   if (!a.claims.length) return { ok: false, reason: "no claims" };
+  const kept: { text: string; citations: number[] }[] = [];
+  let firstProblem = "";
   for (const c of a.claims) {
-    if (!c.citations.length) return { ok: false, reason: "a claim has no citation" };
-    if (c.citations.some((n) => n < 1 || n > passages.length)) return { ok: false, reason: "a citation points to no supplied passage" };
-    const evidence = c.citations.map((n) => passages[n - 1]).join(" ");
-    const nums = unsupportedNumbers(c.text, evidence);
-    if (nums.length) return { ok: false, reason: `${nums.join(", ")} not in the cited passage` };
-    const names = unknownNames(c.text, evidence);
-    if (names.length) return { ok: false, reason: `${names.slice(0, 3).join(", ")} not in the cited passage` };
-    const dir = directionUnsupported(c.text, evidence);
-    if (dir) return { ok: false, reason: `a claim ${dir}` };
-    const v = c.text.match(VERDICT);
-    if (v && !evidence.toLowerCase().includes(v[0].toLowerCase())) return { ok: false, reason: "the model issued its own verdict" };
-    const o = overlap(c.text, evidence);
-    if (o < MIN_OVERLAP) return { ok: false, reason: `a claim is not supported by its citation (${Math.round(o * 100)}% word overlap)` };
+    const problem = claimProblem(c, passages);
+    if (problem) firstProblem ||= problem;
+    else kept.push({ text: c.text, citations: [...new Set(c.citations)] });
   }
-  return { ok: true, status: "answered", claims: a.claims.map((c) => ({ text: c.text, citations: [...new Set(c.citations)] })) };
+  if (!kept.length) return { ok: false, reason: firstProblem };
+  return { ok: true, status: "answered", claims: kept, removed: a.claims.length - kept.length, firstProblem: firstProblem || undefined };
 }
 
 /** Keeps only cited passages and renumbers them 1..n in order of first use, so chips match the text. */

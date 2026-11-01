@@ -14,6 +14,11 @@ export interface ParsedPdf {
 async function parse(url: string, maxPages: number): Promise<ParsedPdf> {
   const t0 = Date.now();
   const r = await get(url, { timeoutMs: 45000, source: new URL(url).host });
+  // Refuse from the header: downloading a 55 MB report to reject it took 33s, and was repeated on every question.
+  if (Number(r.headers.get("content-length")) > MAX_BYTES) {
+    await r.body?.cancel().catch(() => undefined);
+    throw new SourceError(url, null, "PDF exceeds the 40 MB limit");
+  }
   const buf = await r.arrayBuffer();
   addTiming("download", Date.now() - t0);
   const t1 = Date.now();

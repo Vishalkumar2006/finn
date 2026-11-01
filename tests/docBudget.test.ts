@@ -1,5 +1,6 @@
 import { gzipSync } from "node:zlib";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadPdf } from "../src/lib/sources/pdf";
 import { cached, backgroundWork, setRemoteStore, type RemoteStore } from "../src/lib/sources/http";
 import { gatherDocs } from "../src/lib/research/engine";
 
@@ -122,5 +123,16 @@ describe("shared store", () => {
     expect((await cached(uniq("throw"), LONG, async () => 5)).value).toBe(5);
     setRemoteStore({ get: async () => "not gzip", set: async () => undefined });
     expect((await cached(uniq("garbage"), LONG, async () => 6)).value).toBe(6);
+  });
+});
+
+describe("oversized PDFs", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("are refused from the header, without reading the body", async () => {
+    let bodyRead = false;
+    const body = new ReadableStream({ pull() { bodyRead = true; } }, { highWaterMark: 0 });
+    vi.stubGlobal("fetch", async () => new Response(body, { headers: { "content-length": String(55 * 1024 * 1024) } }));
+    await expect(loadPdf(`https://example.test/big-${Date.now()}.pdf`)).rejects.toThrow("40 MB");
+    expect(bodyRead).toBe(false);
   });
 });

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { MonitorPanel } from "@/components/MonitorPanel";
+import { PushPanel } from "@/components/PushPanel";
 import { ErrorNote, Skeleton, useReportUnread } from "@/components/Shell";
 import { CATEGORY_LABEL, fmtDate, fmtPct, fmtTime, updateSettings, useApi, useNow, useSettings } from "@/lib/client";
 import { CATEGORIES, type Category } from "@/lib/domain/types";
@@ -95,6 +96,8 @@ export default function AlertsPage() {
 
       <MonitorPanel />
 
+      <PushPanel />
+
       <section className="sect">
         <div className="sect-h"><h2>What counts as unusual</h2></div>
         <div className="rule-row">
@@ -118,7 +121,7 @@ export default function AlertsPage() {
         <p style={{ fontSize: 13.5, marginTop: 8, color: "var(--ink-2)" }}>
           Your inbox is checked on the server when you open this page, using your portfolio, your thresholds and end-of-day prices. It is not intraday.
           Daily monitoring is separate: it runs in the background once a day, on the shared demo portfolio and fixed rules only, and its results appear when you open the app. If a source is unreachable, FINN uses a saved snapshot, refreshed by hand{q.data?.snapshotAt ? `, last on ${fmtTime(q.data.snapshotAt)} IST` : ""}, and labels it; daily monitoring never does, and reports the failure instead.
-          Alerts appear here in the app. There are no phone or email notifications yet, and your rules stay on this device.
+          Alerts appear here in the app, and your rules stay on this device. There are no email notifications, and phone notifications currently carry test messages only.
         </p>
       </section>
     </>

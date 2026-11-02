@@ -46,12 +46,14 @@ scripts/ingest.ts  manual snapshot refresh
 
 **Retrieved text is data.** The optional model has no tools and cannot set a filed number or verdict. On ordinary questions it never receives them. On guidance questions it may read them as evidence beside a verdict already computed by `domain/guidance.ts`, and an explanation that states its own verdict is thrown away whole (`domain/outcome.ts`). It sees passages inside delimiters with an instruction to ignore anything in them. Each claim it returns is checked against the passages it cites (`domain/answerCheck.ts`). Claims that fail are removed and counted on screen, and if none survive the answer falls back to labelled direct quotes.
 
+**Installable, with opt-in phone notifications.** FINN ships a web app manifest and a service worker (`public/sw.js`) that only shows push notifications and handles taps. It has no fetch handler and caches nothing, so prices, filings and citations are never served stale from the device. Turning notifications on (Alerts page) stores the browser's push subscription in a private Blob document separate from monitoring state. Writes are conditional, so simultaneous changes are never lost, and endpoints must belong to a known browser push service, so the server can't be pointed at another host. Messages are VAPID-signed and encrypted (`web-push`). The only sender today is an admin-only test endpoint, which needs `PUSH_ADMIN_SECRET`, targets one device code and is rate-limited. A tap opens only FINN's own Alerts or company pages.
+
 **Efficient by default.** One market-wide filings call serves any portfolio. Parsed filings are cached and shared between server instances. Search is BM25 over page chunks, with no vector database. The product costs nothing to run without a model.
 
 ## Limitations
 
-- Background monitoring runs once a day on the shared demo portfolio at fixed thresholds, and stores its findings for the Alerts page. There are no push notifications. Your own portfolio and thresholds stay on your device and are checked when a page is opened. Snapshots are refreshed by hand with `npm run ingest`.
-- Alerts appear in the app only, and rules and read state stay on one device. There are no phone or email notifications.
+- Background monitoring runs once a day on the shared demo portfolio at fixed thresholds, and stores its findings for the Alerts page. It does not send push notifications yet. Your own portfolio and thresholds stay on your device and are checked when a page is opened. Snapshots are refreshed by hand with `npm run ingest`.
+- Alerts appear in the app, and rules and read state stay on one device. Phone notifications can be turned on, but currently carry only labelled test messages sent by the operator, and concern the shared demo portfolio, not your own thresholds. There are no email notifications. iPhone needs FINN added to the Home Screen first.
 - Guidance extraction is rule-based and conservative, so most statements end up as "can't test". Few verdicts are given, and those are favoured to be right.
 - Scanned PDFs have no OCR. Some companies file only a link notice instead of a transcript; these are listed as skipped.
 - EBITDA is derived from filed lines and excludes other income, so it can differ from a company's own figure.

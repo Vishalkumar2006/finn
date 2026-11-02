@@ -202,15 +202,39 @@ Not verified:
 - A real Vercel-triggered run. The check for it is "Last automated check" on Alerts, with a time inside the window, plus the logs for `/api/cron/monitor`.
 - That the route labels a Vercel call as automatic. The header it reads is from Vercel's docs. Using "Run" in the Vercel dashboard may be labelled automatic too, so judge by the time.
 
-Limits: Blob on Hobby is free up to 1 GB, 10,000 simple and 2,000 advanced operations a month. Over that it stops for up to 30 days without charge, and the panel says the record can't be read. Status reads are cached for 60 seconds to stay well inside this. There is no push notification: findings appear when the app is opened.
+Limits: Blob on Hobby is free up to 1 GB, 10,000 simple and 2,000 advanced operations a month. Over that it stops for up to 30 days without charge, and the panel says the record can't be read. Status reads are cached for 60 seconds to stay well inside this. Monitoring does not send push notifications: findings appear when the app is opened.
 
 Snapshots are still refreshed by hand: `npm run ingest`, commit, deploy. Research uses the saved analysis for 48 hours after a refresh, then runs live. Nothing commits to the repo automatically.
+
+## Phone notifications (installable app, test push only)
+
+FINN is installable (manifest, 192/512 and maskable icons, standalone display, FINN theme colours) and can receive real Web Push notifications. Delivery is limited to an operator-sent TEST message. Monitoring does not send notifications, and none of the 72 stored events has been or will be pushed.
+
+- **Service worker** (`public/sw.js`): handles push and notification taps only. It has no fetch handler and no cache, so financial data, citations and monitoring status always come from the network as before. It is served with `no-cache`, and an update activates on the next visit.
+- **Opt-in:** permission is requested only when "Turn on" is pressed on Alerts. The panel shows on, off, blocked, unsupported, or unavailable when the server has no keys. A browser that holds a subscription re-registers it on load; the same endpoint is stored once.
+- **Storage:** the same private Blob store as monitoring, but a separate document (`push/subscriptions.json`) that monitoring never reads. Each record holds the endpoint, keys, a creation time and a 12-hex-character id; there is no user agent, IP or account. Writes are conditional on the version read, and losers retry, so simultaneous subscribe and unsubscribe calls both survive. A cap of 500 devices applies. There is no API that returns the list.
+- **Input checks:** an endpoint must be https on a known push service (FCM, Mozilla, Apple, Windows), with no credentials or port, so the server can't be made to fetch any other host. It is checked again at send time. Keys must be a 65-byte P-256 point and a 16-byte secret. Bodies are capped at 4 KB, requests must be same-origin, and each client is limited to 10 a minute.
+- **Sending:** `web-push` produces VAPID-signed, aes128gcm-encrypted messages with an 8 s timeout, TTL of 10 minutes and high urgency. Batches are capped at 50 with 4 sends at a time. A 404 or 410 deletes the subscription. Logs carry the short id and status code only.
+- **Test send:** `POST /api/push/test` needs `PUSH_ADMIN_SECRET`, which never reaches the browser. It fails closed without the secret and sends to the single device code shown on that phone. The limit is 5 per hour per device with at least 20 s between sends. It can't broadcast.
+- **Tap:** opens `/alerts` or `/research/{SYMBOL}` on FINN's own origin only, both in the payload check and in the worker. An open FINN window is reused.
+
+| Check | Result |
+|---|---|
+| Real delivery, desktop Chrome, every FINN tab closed | FCM accepted (201). Chrome recorded "Push message received, encrypted, success", "Push event dispatched" and "Push event completed: Success", with the TEST payload decrypted intact |
+| Same subscription after the browser unsubscribed | FCM 410, mapped to "expired" for deletion |
+| Turn on with the store unavailable | Error shown; no browser subscription left behind |
+| Permission denied | "Blocked in browser settings" with how to undo it |
+| Pages served by the service worker | 0 responses on Brief, Watchlist, Alerts and L&T research |
+| 390 px and 1280 px | No overflow, no page errors |
+| Cron schedule and monitor route | Unchanged; tests assert this |
+
+Not verified here: whether the notification appears on screen. The automated Chrome used for testing showed no notifications at all, even from a direct `showNotification` call, and Chrome logged its generic fallback. Display and tap navigation must be confirmed on a real phone.
 
 ## Other checks
 
 | Check | Result |
 |---|---|
-| Unit tests, lint, typecheck, build | 218 tests pass; others clean |
+| Unit tests, lint, typecheck, build | 238 tests pass (20 for push); others clean |
 | Commit identity | All commits `Vishalkumar2006 <vishku2004@gmail.com>`, no AI trailers |
 | Secrets in Git history | Pattern scan found none; no env files, logs or PDFs tracked |
 

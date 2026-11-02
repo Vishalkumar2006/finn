@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { createContext, Suspense, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { SourceRef } from "@/lib/domain/types";
 import { fmtDate } from "@/lib/client";
+import { registerWorker } from "./PushPanel";
 
 const TABS = [
   { href: "/", label: "Brief" },
@@ -30,6 +31,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const [src, setSrc] = useState<SourceRef | null>(null);
   const [unread, setUnread] = useState(0);
   const close = useCallback(() => setSrc(null), []);
+  useEffect(() => {
+    registerWorker()?.catch(() => {});
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("keydown", onKey);

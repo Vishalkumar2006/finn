@@ -147,7 +147,27 @@ Limits:
 - About one in two explanations was withheld by the checks in testing (small sample), leaving the card alone.
 - A rule-extracted statement can still be mis-scored on a company not read by hand. Detection is by keyword, so an unusual wording goes to document search, and some off-topic questions using both "guidance" and "against" will show a comparison.
 - Only the ledger's top 14 statements from up to six calls are considered. A statement dropped by that limit reads as not found.
-- Follow-ups such as "what about FY27?" are not treated as guidance questions.
+- Short follow-ups ("What about FY27?", "And margins?") after a guidance question keep its subject or period. Longer or vaguer follow-ups go to document search.
+- Periods written as "financial year '26" or "2025-'26" are not recognised by extraction, so such statements are listed as untestable (seen on Cummins). This loses verdicts; it does not create wrong ones.
+- Transcript labels are the month a transcript was listed, not the call date: L&T's "Aug 2026" call was held on 28 July 2026. Guidance answers now say "transcript listed for"; Said vs delivered and ordinary answers still show the bare month.
+
+## Final audit, 2 Nov 2026
+
+| Check | Result |
+|---|---|
+| L&T FY26 consolidated revenue growth | 11.79%: ₹2,858,743.6 m vs ₹2,557,344.5 m, NSE XBRL tagged Consolidated |
+| L&T FY26 standalone revenue growth | 7.84%: ₹1,536,801.7 m vs ₹1,425,090.1 m, tagged Standalone |
+| Supreme FY26 EBITDA margin | 13.85% consolidated without other income; 14.77% standalone with ₹1,026.6 m other income |
+| L&T FY27 guidance | "10% to 12% revenue growth", P. Ramakrishnan, p.11 of the 28 July 2026 call transcript; company-wide; not yet due |
+| Follow-ups and hard questions on production | L&T FY26, then "What about FY27?"; Supreme "achieved?"; "Why did management miss its target?"; "Compare expectations with actual performance"; the same on Cummins: correct path each time, missing evidence stated |
+| "Why" questions | Answer says filings show the outcome, not its cause |
+| Reliability, 2 rounds | 11 research requests (cold, warm, 4 concurrent, keep-alive and closed) and 7 idle-socket reuses up to 60 s: all 200 with valid JSON from bom1 |
+| Production 5xx, last 5 hours | Only the five Phase 2 monitoring 503s, fixed then |
+| Mobile 390 px, desktop 1280 px | No overflow, no page errors |
+
+The two connection resets seen during Phase 3 testing are unresolved. Both came from the test script, not a browser. Vercel's request log has no record of the failed request at 12:25 IST, so it did not reach the app; retries succeeded. They could not be reproduced in two controlled rounds.
+
+A production deploy once exited without deploying; it was caught by checking the deployment ID and redeployed.
 
 ## Monitoring
 
@@ -190,7 +210,7 @@ Snapshots are still refreshed by hand: `npm run ingest`, commit, deploy. Researc
 
 | Check | Result |
 |---|---|
-| Unit tests, lint, typecheck, build | 208 tests pass; others clean |
+| Unit tests, lint, typecheck, build | 218 tests pass; others clean |
 | Commit identity | All commits `Vishalkumar2006 <vishku2004@gmail.com>`, no AI trailers |
 | Secrets in Git history | Pattern scan found none; no env files, logs or PDFs tracked |
 

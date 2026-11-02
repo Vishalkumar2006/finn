@@ -86,6 +86,21 @@ export function outcomeIntent(question: string, today: string): OutcomeIntent | 
   return { metrics: hit?.metrics ?? null, term, subject: hit ? (hit.metrics?.length ? hit.subject : asked!) : "any measure", period };
 }
 
+// "What about FY27?" or "And margins?" right after a guidance question. Anything longer is treated as a new question.
+const FOLLOW_UP = /^\s*(and\s+)?((what|how)\s+about|and|for|in)\b/i;
+
+/** A short follow-up keeps the previous guidance question and changes only the period or subject it names. */
+export function followUpIntent(question: string, previous: string | undefined, today: string): OutcomeIntent | null {
+  if (!previous || question.length > 60 || !FOLLOW_UP.test(question)) return null;
+  const before = outcomeIntent(previous, today);
+  if (!before) return null;
+  const { period } = parsePeriod(question, today);
+  const hit = SUBJECTS.find((s) => s.term.test(question));
+  if (!period && !hit) return null;
+  const subject = hit ? outcomeIntent(`Did management meet its ${question.match(hit.term)![0]} guidance?`, today) : null;
+  return { ...before, ...(subject ? { metrics: subject.metrics, term: subject.term, subject: subject.subject } : {}), period: period ?? before.period };
+}
+
 /* ---------- which statements ---------- */
 
 function samePeriod(asked: FiscalPeriod | null, p: FiscalPeriod | null): boolean {
@@ -130,7 +145,8 @@ const periodName = (p: FiscalPeriod | null) => (!p ? "" : p.kind === "FY" ? `FY$
 /** Plain statement of one row. The only place verdict words are written, and they follow the row's own status. */
 export function describe(item: OutcomeItem, basis: Basis): string {
   const { claim: c, evaluation: e } = item.row;
-  const said = `On the ${item.row.callLabel} call, management guided ${guided(c)} ${METRIC_WORDS[c.metric]} for ${periodName(c.period)}.`;
+  // The label is the month the transcript was listed, which can be weeks after the call itself.
+  const said = `In the call transcript listed for ${item.row.callLabel}, management guided ${guided(c)} ${METRIC_WORDS[c.metric]} for ${periodName(c.period)}.`;
   if (e.status === "not_yet") return `${said} That period has not been reported yet, so there is no verdict.`;
   if (!e.actual) return `${said} ${e.reason}`;
   const money = c.metric === "revenue_abs";

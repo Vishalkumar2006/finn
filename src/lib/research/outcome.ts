@@ -1,6 +1,6 @@
 import { renumber, parseModelAnswer, sanitisePassage } from "../domain/answerCheck";
 import { managementPages } from "../domain/guidance";
-import { buildOutcome, checkExplanation, factsPassage, outcomeIntent, type Outcome, type OutcomeItem } from "../domain/outcome";
+import { buildOutcome, checkExplanation, factsPassage, followUpIntent, outcomeIntent, type Outcome, type OutcomeItem } from "../domain/outcome";
 import { chunkPages, search, type Hit } from "../domain/retrieval";
 import type { SourceRef } from "../domain/types";
 import { researchSeed, seedIsFresh } from "../feed";
@@ -56,7 +56,8 @@ async function explain(symbol: string, question: string, outcome: Outcome<Ledger
   const context = await within(contextPassages(outcome.items, question).catch(() => []), CONTEXT_BUDGET_MS);
   if (!context?.length) return { explanationNote: "The transcripts were not ready in time, so this has no written explanation." };
   const facts = outcome.items.map((i) => ({ text: factsPassage(i, outcome.basis), source: i.row.evaluation.actual?.source ?? i.row.source, title: i.row.evaluation.actual ? `Verified result, ${i.row.evaluation.actual.label}` : "Verified status" }));
-  const passages = [...facts, ...context.map((c) => ({ text: c.hit.text, source: c.source, title: c.source.title }))];
+  // Labelled as a listing month, so the model does not date a call by it.
+  const passages = [...facts, ...context.map((c) => ({ text: c.hit.text, source: c.source, title: c.source.title.replace(/^Earnings call transcript, /, "Earnings call transcript listed for ") }))];
   const key = `explain2:${explainVersion()}:${llmModelName()}:${symbol}:${question.toLowerCase().replace(/\s+/g, " ").trim()}:${createHash("sha1").update(JSON.stringify(passages.map((p) => p.text))).digest("hex").slice(0, 16)}`;
   try {
     const c = await cached(key, 6 * HOUR, async () => {
@@ -80,7 +81,8 @@ async function explain(symbol: string, question: string, outcome: Outcome<Ledger
 }
 
 export async function answerQuestion(symbol: string, question: string, previous?: string): Promise<IntegratedAnswer> {
-  const intent = outcomeIntent(question, new Date().toISOString().slice(0, 10));
+  const today = new Date().toISOString().slice(0, 10);
+  const intent = outcomeIntent(question, today) ?? followUpIntent(question, previous, today);
   if (!intent) return ask(symbol, question, previous);
 
   const t0 = Date.now();
@@ -99,8 +101,10 @@ export async function answerQuestion(symbol: string, question: string, previous?
     return { ...a, outcome };
   }
   const written = await explain(symbol, question, outcome);
+  // Filings show what happened, never why. Only management's own words, below, can speak to that.
+  const why = /^\s*why\b/i.test(question) ? [`Filed figures show the outcome, not its cause. ${written.explanation ? "What management said around the target is below, in its own words; it is not a verified reason." : "No passage from the calls behind these figures gave a reason FINN could verify."}`] : [];
   return {
-    mode: "outcome", answer: built.summary, citations: [], model: written.explanation?.model,
+    mode: "outcome", answer: [...built.summary, ...why], citations: [], model: written.explanation?.model,
     coverage: loaded.led.transcriptsRead.map((t) => (t.error ? `${t.label} call: not readable (${t.error})` : `${t.label} call: ${t.pages} pages`)),
     outcome: { ...outcome, ...written },
   };

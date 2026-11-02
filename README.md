@@ -16,7 +16,7 @@ npm run build      # production build
 npm run ingest     # refresh data/snapshot from live sources
 ```
 
-Node 22+. No keys needed. To let a model synthesize answers, set the variables in `.env.example` (verified with `gemini-3.1-flash-lite` on Gemini's OpenAI-compatible endpoint); without them, answers are direct quotes and the UI says so.
+Node 22+. No keys needed. To let a model synthesize answers, copy the variable names from `.env.example` into `.env.local` for local use, or into the Vercel project's environment variables for production, and never commit real values (verified with `gemini-3.1-flash-lite` on Gemini's OpenAI-compatible endpoint); without them, answers are direct quotes and the UI says so.
 
 ## Data sources
 

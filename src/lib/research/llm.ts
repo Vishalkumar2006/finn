@@ -53,7 +53,7 @@ Rules:
 - Give a reason for a target only if the passage ties that reason to that same metric. Calls move through order inflow, revenue, margin and working capital in turn, and a reason given for one does not carry to the next. If no passage links a reason to this metric, say what was stated and give no reason. Never connect two statements with words like "supported by", "driven by" or "due to" unless the passage itself uses those words; report them side by side instead.
 - Do not say why a result differed from guidance unless a passage says so. Management's expectations are not evidence of what later happened.
 - Scope matters. If a passage covers one segment or subsidiary rather than the whole company, name it in the claim.
-- Date every claim from its source, in the past tense: "On the Feb 2026 call, management said...".
+- Date every claim from its source label, in the past tense: "In the transcript listed for Feb 2026, management said...". The label is when the transcript was listed, not necessarily when the call took place.
 - Give no investment advice or view on the stock.
 - If the passages add nothing beyond the verified result, abstain.
 

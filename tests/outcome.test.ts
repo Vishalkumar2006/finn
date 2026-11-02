@@ -1,7 +1,7 @@
 import { describe as group, expect, it } from "vitest";
 import { evaluateRobust, extractClaims } from "@/lib/domain/guidance";
 import { fiscalLabel } from "@/lib/domain/metrics";
-import { buildOutcome, checkExplanation, outcomeIntent, type OutcomeItem, type OutcomeRow } from "@/lib/domain/outcome";
+import { buildOutcome, checkExplanation, followUpIntent, outcomeIntent, type OutcomeItem, type OutcomeRow } from "@/lib/domain/outcome";
 import type { PeriodFacts } from "@/lib/domain/types";
 
 const TODAY = "2026-11-02";
@@ -40,6 +40,9 @@ group("which questions get a comparison", () => {
     "Has the company delivered on its margin expectations?",
     "Compare management's guidance against reported results.",
     "What evidence suggests management's expectations were realistic?",
+    "Was Supreme's margin guidance achieved?",
+    "Why did management miss its target?",
+    "Compare management expectations with actual performance.",
   ])("%s", (q) => expect(outcomeIntent(q, TODAY)).not.toBeNull());
 
   it.each([
@@ -83,6 +86,28 @@ group("L&T: group revenue guidance against the filing", () => {
   it("does not mix in a different year", () => {
     expect(o.items.every((i) => i.row.claim.period?.fy === 2026)).toBe(true);
   });
+});
+
+group("follow-ups", () => {
+  const prev = "Did L&T meet its FY26 revenue guidance?";
+  it("keeps the subject and takes the new period", () => {
+    const i = followUpIntent("What about FY27?", prev, TODAY)!;
+    expect(i.period).toEqual({ kind: "FY", fy: 2027 });
+    expect(i.metrics).toEqual(["revenue_growth", "revenue_abs"]);
+    expect(buildOutcome(ltRows, "consolidated", i).items[0].row.evaluation.status).toBe("not_yet");
+  });
+  it("keeps the period and takes a new subject", () => {
+    const i = followUpIntent("And margins?", prev, TODAY)!;
+    expect(i.metrics).toContain("ebitda_margin");
+    expect(i.period).toEqual({ kind: "FY", fy: 2026 });
+  });
+  it.each([
+    ["What about FY27?", "What are the main risks?"],
+    ["What about FY27?", undefined],
+    ["What about the order book in the Middle East over the next few years?", prev],
+    ["Why?", prev],
+    ["What about it?", prev],
+  ])("not a guidance follow-up: %s after %s", (q, p) => expect(followUpIntent(q, p, TODAY)).toBeNull());
 });
 
 group("a target not yet due", () => {

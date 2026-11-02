@@ -88,7 +88,7 @@ export async function answerQuestion(symbol: string, question: string, previous?
   addTiming("ledger", Date.now() - t0);
   if (!loaded) {
     const a = await ask(symbol, question, previous);
-    return { ...a, note: `${a.note ? `${a.note} ` : ""}Filed results or transcripts could not be matched in time, so this answer has no verdict. Said vs delivered may have one.` };
+    return { ...a, note: `${a.note ? `${a.note} ` : ""}Filed results and transcripts could not be loaded for this question, so it has no verdict.` };
   }
   const built = buildOutcome(loaded.led.rows, loaded.led.basis, intent);
   const read = loaded.led.transcriptsRead.filter((t) => !t.error).map((t) => t.label);

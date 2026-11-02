@@ -44,7 +44,7 @@ scripts/ingest.ts  manual snapshot refresh
 
 **A verdict must survive every definition.** A statement is scored only if it names a number, a period and a metric that filings can test, covers the whole company, and comes from management. The result must then hold on both consolidated and standalone numbers, and for EBITDA margin, with and without other income. Otherwise FINN shows the range or declines to score.
 
-**Retrieved text is data.** The optional model has no tools and never receives filed numbers or verdicts. It sees passages inside delimiters with an instruction to ignore anything in them. Each claim it returns is checked against the passages it cites (`domain/answerCheck.ts`). Claims that fail are removed and counted on screen, and if none survive the answer falls back to labelled direct quotes.
+**Retrieved text is data.** The optional model has no tools and cannot set a filed number or verdict. On ordinary questions it never receives them. On guidance questions it may read them as evidence beside a verdict already computed by `domain/guidance.ts`, and an explanation that states its own verdict is thrown away whole (`domain/outcome.ts`). It sees passages inside delimiters with an instruction to ignore anything in them. Each claim it returns is checked against the passages it cites (`domain/answerCheck.ts`). Claims that fail are removed and counted on screen, and if none survive the answer falls back to labelled direct quotes.
 
 **Efficient by default.** One market-wide filings call serves any portfolio. Parsed filings are cached and shared between server instances. Search is BM25 over page chunks, with no vector database. The product costs nothing to run without a model.
 

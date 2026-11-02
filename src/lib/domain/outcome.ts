@@ -174,7 +174,7 @@ export function buildOutcome<R extends OutcomeRow>(rows: R[], basis: Basis, inte
     const when = intent.period ? ` for ${periodName(intent.period)}` : "";
     summary.push(notTested.length
       ? `FINN found statements on ${intent.subject}${when}, but none can be compared with a filed figure, so there is no verdict.`
-      : `FINN found no management statement on ${intent.subject}${when} in the calls it read, so there is no comparison to make.`);
+      : `FINN found no management statement on ${intent.subject}${when} that it could extract from the calls it read, so there is no comparison to make.`);
   }
   return { basis, items, notTested: notTested.slice(0, 6), summary };
 }

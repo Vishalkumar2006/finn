@@ -64,7 +64,7 @@ Enabled in production and verified against the real provider.
 - `gemini-3.8-flash`, the first configured model, was rejected: all three timed test calls ran past 25 seconds, and earlier calls took 184 seconds or returned 503.
 - Free-tier limits are low and per model: `gemini-3.6-flash` stopped at 20 requests a day. The limit for the deployed model has not been measured.
 
-How answers are made safe: the model returns claims as JSON. Each claim is checked only against the passages it cites, for numbers, fiscal labels, names, direction of change, verdict words and word overlap. Failing claims are removed and the reader is told. If none survive, or the provider fails, the answer falls back to labelled direct quotes. The model never receives filed figures or guidance verdicts, and its output never reaches them.
+How answers are made safe: the model returns claims as JSON. Each claim is checked only against the passages it cites, for numbers, fiscal labels, names, direction of change, verdict words and word overlap. Failing claims are removed and the reader is told. If none survive, or the provider fails, the answer falls back to labelled direct quotes. On ordinary questions the model never receives filed figures or verdicts. Guidance questions work differently: see Guidance questions below. In both cases its output never changes a figure or verdict.
 
 Limits: 12 questions a minute per client, 300 model calls a day per server instance (`LLM_DAILY_LIMIT`), 400-character questions, 4 KB bodies, a same-origin check, a 15-second model budget, and a 6-hour cache of checked answers. Counters are in memory and per instance.
 
@@ -82,7 +82,7 @@ Limits: 12 questions a minute per client, 300 model calls a day per server insta
 ### LLM limitations
 
 - The checks are necessary, not sufficient. They caught wrong numbers and unrelated citations, but an answer can pass and still mislead by framing. One early answer called an old guidance figure current; a prompt rule now requires dated claims, but nothing enforces it.
-- The model can't see filed results, so it can't say how guidance turned out. The UI says so and points to Said vs delivered.
+- On ordinary questions the model can't see filed results, so it can't say how guidance turned out. The UI says so and points to Said vs delivered.
 - HDFC Bank's first sampled question took 83.6 seconds and returned a non-JSON response. It did not recur (10.4 seconds on the next cold run), and the cause was not established. PDF parsing now yields between pages as a precaution.
 - Rate limits are per instance, so a distributed caller can exceed them. The provider quota is the hard ceiling: if it is spent, everyone gets extractive answers until it resets. A billing-enabled key would turn this exposure into cost, so keep a free key or set a budget.
 
@@ -114,6 +114,40 @@ NSE was not blocked, so the fallback did not trigger in production. It was teste
 - Brief served labelled snapshot filings with the notice that NSE is unreachable.
 - Quotes and L&T research served from the snapshot.
 - A ticker outside the snapshot returned an error, and its question abstained. No data was invented.
+
+## Guidance questions
+
+A question that asks how guidance turned out gets a comparison card instead of a document search. `domain/outcome.ts` detects the question and selects rows from the existing ledger; it never assigns a verdict, and it can only lower a row to "not tested". All values and verdicts stay in `domain/guidance.ts`. Other questions never load the ledger.
+
+- **Card:** the management quote with speaker, call and page; the filed figure with basis and formula; the gap and verdict; and separate citations for the transcript, the filing and the comparison filing. One target repeated across calls is shown once, from the latest call.
+- **Nothing comparable:** the reader is told, and the question goes to document search as before.
+- **Filed data:** the saved analysis while fresh (48 hours), otherwise live with a 30-second budget. Annual reports are not read.
+- **Model explanation (optional):** it reads the computed result plus passages from the calls behind the verdict, and may only add what management said around it. It is thrown away whole if it states any verdict, even the correct one, gives advice, repeats a guided number as a reported one, uses a causal phrase its source doesn't use, or fails the claim checks. A filing can't be the citation for what management said. The card is unchanged if the model fails.
+
+| Check on production | Result |
+|---|---|
+| L&T, FY26 revenue growth | Guided 15%, filed 11.79%, missed by 3.21 points; consolidated and standalone (7.84%) both miss |
+| L&T, FY27 revenue growth | Guided 10% to 12%, not yet due, no filed figure |
+| Supreme, EBITDA margin | 13.85% to 14.77% against 14.5% to 15%, no verdict |
+| Ratnamani, EBITDA margin | 17.73% to 19.18% against 16% to 18%, no verdict |
+| Bajaj Finance, AUM; KEI, revenue; IRCTC, all guidance | No verdict, told so, then document search |
+| Blue Dart, revenue | No comparable statement extracted, told so |
+| Goldbees (no documents) | No verdict, told so |
+| Figures recalculated from raw XBRL | L&T 11.79%, Supreme 13.85%, Ratnamani 17.73% and 19.18% all match |
+| Quotes against the transcript PDF | L&T (3) and Supreme (1) verbatim on the cited page |
+| Said vs delivered, financials, signals | Unchanged |
+| Combined answer time | 1.8 to 13 s first ask, 0.3 to 0.4 s repeat, 4.7 to 7.6 s with a live ledger, 10.5 s on an unfamiliar ticker that then fell through to search |
+
+Reading the first production answers against their sources found three faults the tests had missed, all now fixed: a management statement cited to a filing, "pipeline" given as the reason for revenue guidance when the transcript ties it to order inflow, and a margin target called "supported by" price rises where the transcript sets them apart. A future plant-level rupee target (KEI's Sanand) also read as company guidance, because no filed period yet exists to check its scale; such targets are now listed as not tested.
+
+Limits:
+
+- A company usually has no testable guidance. In the saved 19-company analysis, verdicts are rare, so "no verdict" is the most common honest result.
+- The model can still misread a passage. The checks catch verdicts, numbers and borrowed causal phrases, not every wrong framing, so the page says to open the source.
+- About one in two explanations was withheld by the checks in testing (small sample), leaving the card alone.
+- A rule-extracted statement can still be mis-scored on a company not read by hand. Detection is by keyword, so an unusual wording goes to document search, and some off-topic questions using both "guidance" and "against" will show a comparison.
+- Only the ledger's top 14 statements from up to six calls are considered. A statement dropped by that limit reads as not found.
+- Follow-ups such as "what about FY27?" are not treated as guidance questions.
 
 ## Monitoring
 
@@ -156,7 +190,7 @@ Snapshots are still refreshed by hand: `npm run ingest`, commit, deploy. Researc
 
 | Check | Result |
 |---|---|
-| Unit tests, lint, typecheck, build | 166 tests pass; others clean |
+| Unit tests, lint, typecheck, build | 208 tests pass; others clean |
 | Commit identity | All commits `Vishalkumar2006 <vishku2004@gmail.com>`, no AI trailers |
 | Secrets in Git history | Pattern scan found none; no env files, logs or PDFs tracked |
 

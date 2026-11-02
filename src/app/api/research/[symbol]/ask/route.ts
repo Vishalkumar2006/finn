@@ -1,7 +1,7 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { bad, failure, parseSymbol } from "@/lib/api";
-import { ask } from "@/lib/research/engine";
+import { answerQuestion } from "@/lib/research/outcome";
 import { allowQuestion, clientKey, sameOrigin } from "@/lib/research/guard";
 import { llmEnabled } from "@/lib/research/llm";
 import { backgroundWork } from "@/lib/sources/http";
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ symbol: st
   if (!body.success) return bad("Ask a question of 4 to 400 characters");
   try {
     after(backgroundWork); // a slow annual report finishes into the cache after the answer is sent
-    const { value, header } = await withTiming(() => ask(symbol, body.data.question, body.data.previous));
+    const { value, header } = await withTiming(() => answerQuestion(symbol, body.data.question, body.data.previous));
     return NextResponse.json({ ...value, llmConfigured: llmEnabled() }, { headers: { "server-timing": header } });
   } catch (e) {
     return failure(e);

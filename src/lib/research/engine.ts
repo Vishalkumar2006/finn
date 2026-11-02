@@ -355,7 +355,7 @@ function topSentence(text: string, query: string): string {
 }
 
 export interface Answer {
-  mode: "llm" | "extractive" | "abstain";
+  mode: "llm" | "extractive" | "abstain" | "outcome";
   answer: string[];
   citations: SourceRef[];
   coverage: string[];

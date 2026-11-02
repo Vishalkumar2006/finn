@@ -2,8 +2,9 @@ import { after, NextResponse, type NextRequest } from "next/server";
 import { bad, failure, parseSymbol } from "@/lib/api";
 import type { Basis } from "@/lib/domain/types";
 import { researchSeed, seedIsFresh } from "@/lib/feed";
-import { buildCase, getBusiness, getDocuments, getFinancials, getLedger, warmDocuments, type Financials, type Ledger } from "@/lib/research/engine";
+import { buildCase, getBusiness, getDocuments, getFinancials, warmDocuments, type Financials } from "@/lib/research/engine";
 import { allowWarm, clientKey } from "@/lib/research/guard";
+import { ledgerOf as ledger } from "@/lib/research/outcome";
 
 export const maxDuration = 90;
 
@@ -14,17 +15,6 @@ async function financials(symbol: string, basis?: Basis): Promise<{ fin: Financi
     return { fin: await getFinancials(symbol, basis), seeded: false };
   } catch (e) {
     if (seed && (!basis || basis === seed.basis)) return { fin: seed, seeded: true };
-    throw e;
-  }
-}
-
-async function ledger(symbol: string): Promise<{ led: Ledger; seeded: boolean }> {
-  const seed = researchSeed.ledgers[symbol];
-  if (seed && seedIsFresh()) return { led: seed, seeded: true };
-  try {
-    return { led: await getLedger(symbol), seeded: false };
-  } catch (e) {
-    if (seed) return { led: seed, seeded: true };
     throw e;
   }
 }

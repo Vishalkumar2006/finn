@@ -4,9 +4,10 @@ import { Suspense, use, useEffect, useState, type FormEvent } from "react";
 import { Cite, ErrorNote, Skeleton, Sparkline } from "@/components/Shell";
 import { fmtCr, fmtDate, fmtPct, fmtTime, updateSettings, useApi, useSettings } from "@/lib/client";
 import { comparePeriods, marginPct, pctChange, ratio, type MetricKey } from "@/lib/domain/metrics";
-import type { Basis, GuidanceClaim, GuidanceStatus, PeriodFacts } from "@/lib/domain/types";
+import type { Basis, GuidanceClaim, GuidanceStatus, PeriodFacts, SourceRef } from "@/lib/domain/types";
 import type { Quote } from "@/lib/feed";
-import type { Answer, CasePoint, Financials, Ledger, LedgerRow, ResearchDoc, Snapshot } from "@/lib/research/engine";
+import type { CasePoint, Financials, Ledger, LedgerRow, ResearchDoc, Snapshot } from "@/lib/research/engine";
+import type { IntegratedAnswer } from "@/lib/research/outcome";
 
 type Seeded<T> = T & { seeded?: boolean; seedAt?: string | null };
 
@@ -110,7 +111,7 @@ function SaidDelivered({ symbol }: { symbol: string }) {
   );
 }
 
-function Claim({ row, basis }: { row: LedgerRow; basis: Basis }) {
+function Claim({ row, basis, also }: { row: LedgerRow; basis: Basis; also?: { callLabel: string; source: SourceRef }[] }) {
   const { claim: c, evaluation: e } = row;
   const money = c.metric === "revenue_abs";
   return (
@@ -133,6 +134,7 @@ function Claim({ row, basis }: { row: LedgerRow; basis: Basis }) {
       </p>
       <div className="cites">
         <Cite source={row.source} label={`${c.speaker}, ${row.callLabel}, p.${c.page}`} />
+        {also?.map((a) => <Cite key={a.source.url + a.source.page} source={a.source} label={`Also ${a.callLabel}, p.${a.source.page}`} />)}
         {e.actual && <Cite source={e.actual.source} label={`Actual: ${e.actual.label}`} />}
         {e.actual?.compareSource && <Cite source={e.actual.compareSource} label={`Base: ${e.actual.compareSource.period}`} />}
       </div>
@@ -287,9 +289,28 @@ function Business({ symbol }: { symbol: string }) {
   );
 }
 
-interface Turn { q: string; a?: Answer & { llmConfigured?: boolean }; error?: string }
+interface Turn { q: string; a?: IntegratedAnswer & { llmConfigured?: boolean }; error?: string }
 
-const SUGGESTIONS = ["What is management saying about margins?", "What are the main risks?", "What is the capex plan?"];
+const SUGGESTIONS = ["Did management deliver on its revenue guidance?", "What is management saying about margins?", "What are the main risks?", "What is the capex plan?"];
+
+function OutcomeView({ o, verdicts }: { o: NonNullable<IntegratedAnswer["outcome"]>; verdicts: boolean }) {
+  const [more, setMore] = useState(false);
+  return (
+    <>
+      {!verdicts && <div className="notice">{o.summary[0]}</div>}
+      {o.items.map((i, j) => <Claim key={j} row={i.row} basis={o.basis} also={i.alsoSaid} />)}
+      {o.explanation && (
+        <div className="qa-a" style={{ marginTop: 10 }}>
+          <h3 style={{ font: "500 14px var(--sans)" }}>What management said around it</h3>
+          {o.explanation.lines.map((x, j) => <p key={j}>{x}</p>)}
+          <div className="cites">{o.explanation.citations.map((c, j) => <Cite key={j} source={c} label={`[${j + 1}] ${c.docType === "transcript" ? `Call ${c.title.split(", ").at(-1)} p.${c.page}` : `Filing ${c.period ?? ""}`}`} />)}</div>
+        </div>
+      )}
+      {o.notTested.length > 0 && <button className="fold" aria-expanded={more} onClick={() => setMore(!more)}><span><b>{o.notTested.length}</b> related {o.notTested.length === 1 ? "statement" : "statements"} FINN could not test</span><span>{more ? "Hide" : "Show"}</span></button>}
+      {more && o.notTested.map((r, j) => <Claim key={j} row={r} basis={o.basis} />)}
+    </>
+  );
+}
 
 function Ask({ symbol }: { symbol: string }) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -327,10 +348,12 @@ function Ask({ symbol }: { symbol: string }) {
           {t.error && <ErrorNote message={t.error} />}
           {t.a && (
             <>
-              <div className="qa-a">{t.a.answer.map((x, j) => <p key={j}>{x}</p>)}</div>
+              {t.a.mode === "outcome" && <div className="qa-a">{t.a.answer.map((x, j) => <p key={j}>{x}</p>)}</div>}
+              {t.a.outcome && <OutcomeView o={t.a.outcome} verdicts={t.a.mode === "outcome"} />}
+              {t.a.mode !== "outcome" && <div className="qa-a">{t.a.answer.map((x, j) => <p key={j}>{x}</p>)}</div>}
               <div className="cites">{t.a.citations.map((c, j) => <Cite key={j} source={c} label={`[${j + 1}] ${c.docType === "annual_report" ? "AR" : "Call"} ${c.title.split(", ").at(-1)} p.${c.page}`} />)}</div>
               <p className="mode">
-                {t.a.mode === "llm" ? `Model-synthesized (${t.a.model}) from the cited passages. Numbers and wording were checked against them automatically; open a source to confirm. The model does not see filed results: outcomes are in Said vs delivered.` : t.a.mode === "extractive" ? `Extractive: direct quotes, best match, nothing paraphrased.` : `No answer given${t.a.model ? ` (assessed by ${t.a.model})` : ""}.`}
+                {t.a.mode === "outcome" ? `Figures and verdicts come from ${t.a.outcome?.basis} XBRL filings and rule-based extraction from ${t.a.outcome?.transcripts.length} calls.${t.a.outcome?.seeded ? " From the saved analysis." : ""}${t.a.outcome?.explanation ? ` The explanation is model-written (${t.a.model}), checked against its citations, and did not set any verdict.` : ""}${t.a.outcome?.explanationNote ? ` ${t.a.outcome.explanationNote}` : ""}` : t.a.mode === "llm" ? `Model-synthesized (${t.a.model}) from the cited passages. Numbers and wording were checked against them automatically; open a source to confirm. The model does not see filed results: outcomes are in Said vs delivered.` : t.a.mode === "extractive" ? `Extractive: direct quotes, best match, nothing paraphrased.` : `No answer given${t.a.model ? ` (assessed by ${t.a.model})` : ""}.`}
                 {t.a.llmRejected ? ` ${t.a.llmRejected}` : ""}
                 {t.a.note ? ` ${t.a.note}` : ""}
               </p>

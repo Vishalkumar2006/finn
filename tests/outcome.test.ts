@@ -222,6 +222,11 @@ group("the model's explanation", () => {
     // 11.79 is only in the filing passage, so once that citation is dropped the claim has no support.
     expect(checkExplanation(say("On the Feb 2026 call, management expected a ramp-up in project execution to 11.79.", [1, 2]), passages, items, 1).ok).toBe(false);
   });
+  it("refuses a causal link its source does not make", () => {
+    expect(checkExplanation(say("On the Feb 2026 call, the target was supported by project execution.", [2]), passages, items).ok).toBe(false);
+    const own = ["Verified result.", "On the Feb 2026 call management said project execution was supported by Q4 ramp-up."];
+    expect(checkExplanation(say("On the Feb 2026 call, project execution was supported by Q4 ramp-up.", [2]), own, items).ok).toBe(true);
+  });
   it("refuses investment advice", () => {
     expect(checkExplanation(say("Investors should buy on the project execution ramp-up."), passages, items)).toEqual({ ok: false, reason: "it gave investment advice" });
   });

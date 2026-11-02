@@ -189,6 +189,8 @@ export function factsPassage(item: OutcomeItem, basis: Basis): string {
 // The card carries the verdict. Any verdict in the model's own words is refused, even a correct one.
 const OWN_VERDICT = /\b(miss(ed|es|ing)?|exceed(ed|s)|beat|fell short|falls? short|short of|under-?deliver\w*|over-?deliver\w*|fail(ed|s)?|met|did not meet|delivered|achieved|surpass\w*|outperform\w*|underperform\w*|(above|below|ahead of|behind) (its |the |their )?(guidance|target|expectation)s?)\b/i;
 const ADVICE = /\b(buy|sell|hold|accumulate|overweight|underweight|undervalued|overvalued|price target|invest in)\b/i;
+// The checks can't read meaning, so a causal link must be the source's own words, not the model's inference.
+const CAUSAL = /\b(supported by|underpinned by|driven by|backed by|attributed|attributing|thanks to|because of|as a result of|owing to|due to|depended on|depends on|dependent on|contingent (?:up)?on|led to|resulted in)\b/i;
 const REPORTING = /\b(reported|filed|actual(ly)?|grew|rose|increased|came in|ended|recorded|posted)\b/i;
 
 /** A claim of a reported figure that repeats the guided number instead of the filed one contradicts the card. */
@@ -221,6 +223,11 @@ export function checkExplanation(a: ModelAnswer, passages: string[], items: Outc
     const spoken = c.citations.filter((n) => n > factCount);
     return { ...c, citations: spoken.length ? spoken : c.citations };
   });
+  // Real case: "the margin target was supported by price increases", from a transcript that said "But overall" between them.
+  for (const c of claims) {
+    const link = c.text.match(CAUSAL)?.[0];
+    if (link && !c.citations.some((n) => passages[n - 1]?.toLowerCase().includes(link.toLowerCase()))) return { ok: false, reason: `it linked cause and effect ("${link}") beyond its source` };
+  }
   const r = checkAnswer({ ...a, claims }, passages);
   if (!r.ok) return { ok: false, reason: r.reason };
   if (r.status !== "answered" || r.removed) return { ok: false, reason: r.status === "answered" ? (r.firstProblem ?? "a claim failed its checks") : "the passages do not explain it" };

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { CATEGORIES, type Category } from "./domain/types";
-import { DEFAULT_PORTFOLIO } from "./portfolio";
+import { DEFAULT_PORTFOLIO, MONITOR_RULE } from "./portfolio";
 
 /* ---------- settings: per-device, in localStorage ---------- */
 
@@ -18,8 +18,8 @@ export interface Settings {
 const DEFAULTS: Settings = {
   symbols: DEFAULT_PORTFOLIO.map((p) => p.symbol),
   names: Object.fromEntries(DEFAULT_PORTFOLIO.map((p) => [p.symbol, p.name])),
-  pricePct: 4,
-  volumeMultiple: 2,
+  pricePct: MONITOR_RULE.pricePct,
+  volumeMultiple: MONITOR_RULE.volumeMultiple,
   categories: ["results", "M&A", "management_change", "litigation", "pledging"],
   readAlerts: [],
 };

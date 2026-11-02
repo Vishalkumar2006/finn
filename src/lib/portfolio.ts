@@ -1,3 +1,6 @@
+/** Default alert rule, and the fixed rule for the scheduled scan of the shared portfolio. */
+export const MONITOR_RULE = { pricePct: 4, volumeMultiple: 2 };
+
 /** Tickers verified against Yahoo .NS price data and NSE filings on 2026-11-01. */
 export const DEFAULT_PORTFOLIO: { symbol: string; name: string; sector: string }[] = [
   { symbol: "HDFCBANK", name: "HDFC Bank", sector: "Banking" },

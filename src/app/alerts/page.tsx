@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { MonitorPanel } from "@/components/MonitorPanel";
 import { ErrorNote, Skeleton, useReportUnread } from "@/components/Shell";
 import { CATEGORY_LABEL, fmtDate, fmtPct, fmtTime, updateSettings, useApi, useNow, useSettings } from "@/lib/client";
 import { CATEGORIES, type Category } from "@/lib/domain/types";
@@ -68,7 +69,7 @@ export default function AlertsPage() {
       </header>
 
       <section>
-        <div className="sect-h"><h2>Inbox</h2>{unread > 0 && <button className="link" style={{ fontSize: 13 }} onClick={() => updateSettings({ readAlerts: [...new Set([...s.readAlerts, ...alerts.map((a) => a.id)])] })}>Mark all read</button>}</div>
+        <div className="sect-h"><h2>Your inbox</h2>{unread > 0 && <button className="link" style={{ fontSize: 13 }} onClick={() => updateSettings({ readAlerts: [...new Set([...s.readAlerts, ...alerts.map((a) => a.id)])] })}>Mark all read</button>}</div>
         {(q.loading || b.loading) && <Skeleton lines={6} />}
         {q.error && <ErrorNote message={`Price alerts unavailable. ${q.error}`} retry={q.reload} />}
         {b.error && <ErrorNote message={`Filing alerts unavailable. ${b.error}`} retry={b.reload} />}
@@ -92,6 +93,8 @@ export default function AlertsPage() {
         })}
       </section>
 
+      <MonitorPanel />
+
       <section className="sect">
         <div className="sect-h"><h2>What counts as unusual</h2></div>
         <div className="rule-row">
@@ -113,8 +116,8 @@ export default function AlertsPage() {
       <section className="sect">
         <div className="sect-h"><h2>How this runs</h2></div>
         <p style={{ fontSize: 13.5, marginTop: 8, color: "var(--ink-2)" }}>
-          Thresholds are checked on the server when you open this page, using end-of-day prices. They are not intraday.
-          Nothing runs unattended: checks happen only when the page is open. If a source is unreachable, FINN uses a saved snapshot, refreshed by hand{q.data?.snapshotAt ? `, last on ${fmtTime(q.data.snapshotAt)} IST` : ""}, and labels it.
+          Your inbox is checked on the server when you open this page, using your portfolio, your thresholds and end-of-day prices. It is not intraday.
+          Daily monitoring is separate: it runs in the background once a day, on the shared demo portfolio and fixed rules only, and its results appear when you open the app. If a source is unreachable, FINN uses a saved snapshot, refreshed by hand{q.data?.snapshotAt ? `, last on ${fmtTime(q.data.snapshotAt)} IST` : ""}, and labels it; daily monitoring never does, and reports the failure instead.
           Alerts appear here in the app. There are no phone or email notifications yet, and your rules stay on this device.
         </p>
       </section>

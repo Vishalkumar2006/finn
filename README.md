@@ -50,7 +50,7 @@ scripts/ingest.ts  manual snapshot refresh
 
 ## Limitations
 
-- There is no unattended monitoring. Data is pulled and thresholds are checked when a page is opened; snapshots are refreshed by hand with `npm run ingest`.
+- Background monitoring runs once a day on the shared demo portfolio at fixed thresholds, and stores its findings for the Alerts page. There are no push notifications. Your own portfolio and thresholds stay on your device and are checked when a page is opened. Snapshots are refreshed by hand with `npm run ingest`.
 - Alerts appear in the app only, and rules and read state stay on one device. There are no phone or email notifications.
 - Guidance extraction is rule-based and conservative, so most statements end up as "can't test". Few verdicts are given, and those are favoured to be right.
 - Scanned PDFs have no OCR. Some companies file only a link notice instead of a transcript; these are listed as skipped.

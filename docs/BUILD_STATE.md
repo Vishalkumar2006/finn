@@ -117,13 +117,46 @@ NSE was not blocked, so the fallback did not trigger in production. It was teste
 
 ## Monitoring
 
-There is no unattended monitoring. The scheduled workflow was removed so no bot commits to the repo, because Vercel has no durable disk and a storage service wasn't worth adding. Data is pulled and thresholds checked when a page opens. Snapshots are refreshed by hand: `npm run ingest`, commit, deploy. Research uses the saved analysis for 48 hours after a refresh, then runs live.
+**Status: scheduled and manually verified, automatic execution pending.** The first automatic run is due between 17:30 and 18:30 IST on 2 Nov 2026. It had not happened when this was written, so no automatic run has been observed.
+
+Pipeline: Vercel Cron (`0 12 * * *`) calls `/api/cron/monitor`, which needs `CRON_SECRET`. The route reads NSE announcements and Yahoo end-of-day prices directly, classifies and deduplicates, and stores one small JSON document in a private Vercel Blob store (`finn-monitor`, bom1). `/api/monitor` is the public, read-only view, shown in the Daily monitoring section on Alerts.
+
+- **Interval:** once a day. Hobby allows no more, and may run the job at any point in the scheduled hour. Delivery is best effort and a failed run is not retried, so each run reads back to the last good scan (3 to 7 days).
+- **Scope:** the 19-company demo portfolio, at ±4% and 2×. A person's own portfolio and thresholds stay on their device and are checked only when Alerts is open. There are no accounts, so they cannot be monitored in the background.
+- **Stored:** run records (attempts, outcome, counts, errors, latest session) and events: filing number, classification, short summary, source link and time; or company, session, value, threshold and close. No filing text.
+- **Routine filings:** stored and available in a collapsed list, not shown among material events.
+- **Deduplication:** by NSE filing number, including filings clustered under another, and by company, session and signal type. Writes are conditional on the version read, and a losing writer re-reads and merges.
+- **Honest states:** a scan never uses the cache or snapshot. Success needs every source read. Otherwise it is partial or failed, and the last complete scan is kept. An empty market-wide filings response counts as a failed read. Findings from before monitoring began are labelled.
+- **Non-trading days:** weekends are identified, and a session already scanned adds nothing. There is no exchange calendar, so a weekday without bars is shown as "a market holiday, or not published yet".
+
+| Check | Result |
+|---|---|
+| No secret, wrong secret, unprefixed secret, forged cron headers | 401 on production |
+| POST with the secret; no secret configured | 405; refused (tests) |
+| First manual run on production | Success: 19 of 19 companies, 81 portfolio filings, 72 events |
+| Immediate repeat | Success, 0 new |
+| Two simultaneous runs | Both finished, 0 new, no duplicates |
+| Results after fresh deployments | Retained, no duplicates |
+| 10 stored signals against `/api/quotes` | No mismatch |
+| Own thresholds, 4% to 1% | Inbox 30 to 69; scheduled rule unchanged |
+| Failed, partial, stale, never-run and store-down panels (mocked responses) | Each warns or says no scan has completed; only a complete scan says nothing was found |
+| Store unavailable | 503; nothing reported as scanned |
+| A new filing and new signals | Unit tests only: no new genuine event appeared during verification |
+
+Not verified:
+
+- A real Vercel-triggered run. The check for it is "Last automated check" on Alerts, with a time inside the window, plus the logs for `/api/cron/monitor`.
+- That the route labels a Vercel call as automatic. The header it reads is from Vercel's docs. Using "Run" in the Vercel dashboard may be labelled automatic too, so judge by the time.
+
+Limits: Blob on Hobby is free up to 1 GB, 10,000 simple and 2,000 advanced operations a month. Over that it stops for up to 30 days without charge, and the panel says the record can't be read. Status reads are cached for 60 seconds to stay well inside this. There is no push notification: findings appear when the app is opened.
+
+Snapshots are still refreshed by hand: `npm run ingest`, commit, deploy. Research uses the saved analysis for 48 hours after a refresh, then runs live. Nothing commits to the repo automatically.
 
 ## Other checks
 
 | Check | Result |
 |---|---|
-| Unit tests, lint, typecheck, build | 141 tests pass; others clean |
+| Unit tests, lint, typecheck, build | 166 tests pass; others clean |
 | Commit identity | All commits `Vishalkumar2006 <vishku2004@gmail.com>`, no AI trailers |
 | Secrets in Git history | Pattern scan found none; no env files, logs or PDFs tracked |
 
@@ -149,5 +182,7 @@ Reading scored claims in context found false verdicts that are now fixed, each w
 Each scored claim in the snapshot was read in context, but rules can still misfire on companies not reviewed. Ratnamani shows that new tickers do surface new error types.
 
 ## Remaining before submission
+
+- Check that the first automatic monitoring run happened (17:30 to 18:30 IST, 2 Nov 2026).
 
 1. Review the AI build history and attach it. Copy kept outside the repo in `C:\Users\vishk\Projects\finn-ai-build-history`.

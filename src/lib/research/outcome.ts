@@ -47,6 +47,8 @@ async function contextPassages(items: OutcomeItem<LedgerRow>[], question: string
   return out;
 }
 
+class Rejected extends Error {}
+
 /** Optional text beside the card. Any failure leaves the deterministic card exactly as it was. */
 async function explain(symbol: string, question: string, outcome: Outcome<LedgerRow>): Promise<Pick<Outcome<LedgerRow>, "explanation" | "explanationNote">> {
   if (!llmEnabled() || !outcome.items.length) return {};
@@ -55,24 +57,25 @@ async function explain(symbol: string, question: string, outcome: Outcome<Ledger
   if (!context?.length) return { explanationNote: "The transcripts were not ready in time, so this has no written explanation." };
   const facts = outcome.items.map((i) => ({ text: factsPassage(i, outcome.basis), source: i.row.evaluation.actual?.source ?? i.row.source, title: i.row.evaluation.actual ? `Verified result, ${i.row.evaluation.actual.label}` : "Verified status" }));
   const passages = [...facts, ...context.map((c) => ({ text: c.hit.text, source: c.source, title: c.source.title }))];
-  const key = `explain:${explainVersion()}:${llmModelName()}:${symbol}:${question.toLowerCase().replace(/\s+/g, " ").trim()}:${createHash("sha1").update(JSON.stringify(passages.map((p) => p.text))).digest("hex").slice(0, 16)}`;
+  const key = `explain2:${explainVersion()}:${llmModelName()}:${symbol}:${question.toLowerCase().replace(/\s+/g, " ").trim()}:${createHash("sha1").update(JSON.stringify(passages.map((p) => p.text))).digest("hex").slice(0, 16)}`;
   try {
     const c = await cached(key, 6 * HOUR, async () => {
       const blocks = passages.map((p, i) => `<passage id="${i + 1}" source="${p.title.replace(/[<>"]/g, "")}${p.source.page ? `, page ${p.source.page}` : ""}">\n${sanitisePassage(p.text)}\n</passage>`).join("\n");
       const r = await timed("llm", () => complete(`${blocks}\n\nQuestion: ${question}`, EXPLAIN_GUARD));
       if (!r.ok) throw new Error("the model did not answer");
       const parsed = parseModelAnswer(r.text);
-      if (!parsed) throw new Error("its reply was malformed");
-      const checked = checkExplanation(parsed, passages.map((p) => `${p.title}. ${p.text}`), outcome.items);
-      if (!checked.ok) throw new Error(checked.reason);
-      const { lines, used } = renumber(checked.claims);
+      if (!parsed) throw new Rejected("its reply was malformed");
+      const checked = checkExplanation(parsed, passages.map((p) => `${p.title}. ${p.text}`), outcome.items, facts.length);
+      if (!checked.ok) throw new Rejected(checked.reason);
+      // Two passages from one page are one source to a reader.
+      const first = (n: number) => passages.findIndex((p) => p.source.url === passages[n - 1].source.url && p.source.page === passages[n - 1].source.page) + 1;
+      const { lines, used } = renumber(checked.claims.map((x) => ({ ...x, citations: [...new Set(x.citations.map(first))] })));
       return { lines, citations: used.map((n) => passages[n - 1].source), model: r.model };
     });
     return { explanation: c.value };
   } catch (e) {
-    const why = e instanceof Error ? e.message : "it failed";
-    console.error(`llm: explanation not used: ${why}`);
-    return { explanationNote: `A model explanation was not shown because ${why}. The figures and verdict above come from the filings and are unaffected.` };
+    console.error(`llm: explanation not used: ${e instanceof Error ? e.message : "failed"}`);
+    return { explanationNote: `${e instanceof Rejected ? "A model explanation failed FINN's checks, so it is not shown." : "No model explanation is available right now."} The figures and verdict come from the filings and are unaffected.` };
   }
 }
 

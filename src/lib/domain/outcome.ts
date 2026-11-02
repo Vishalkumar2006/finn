@@ -80,7 +80,10 @@ export function outcomeIntent(question: string, today: string): OutcomeIntent | 
     if (word && before && !PLAIN_OWNER.test(before)) return null;
   }
   const { period } = parsePeriod(q, today);
-  return { metrics: hit?.metrics ?? null, term: hit?.term ?? null, subject: hit?.subject ?? "any measure", period };
+  // Only the word asked about, so an AUM question doesn't collect ROE statements from the same list.
+  const asked = hit && q.match(hit.term)?.[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const term = hit?.metrics?.length ? hit.term : asked ? new RegExp(`\\b${asked}\\b`, "i") : null;
+  return { metrics: hit?.metrics ?? null, term, subject: hit ? (hit.metrics?.length ? hit.subject : asked!) : "any measure", period };
 }
 
 /* ---------- which statements ---------- */
@@ -131,7 +134,7 @@ export function describe(item: OutcomeItem, basis: Basis): string {
   if (e.status === "not_yet") return `${said} That period has not been reported yet, so there is no verdict.`;
   if (!e.actual) return `${said} ${e.reason}`;
   const money = c.metric === "revenue_abs";
-  if (e.status === "insufficient" && e.range) return `${said} Filed figures give ${e.range.low}% to ${e.range.high}% depending on the definition and basis, and the target is met on some of them but not others, so FINN gives no verdict.`;
+  if (e.status === "insufficient" && e.range) return `${said} Filed figures give ${e.range.low}% to ${e.range.high}% depending on the definition and basis, and the verdict changes across them, so FINN gives none.`;
   const value = money ? cr(e.actual.value) : `${e.actual.value}%`;
   const filed = `The ${basis} filing for ${e.actual.label} shows ${value}`;
   const gap = e.variance ? (money ? cr(Math.abs(e.variance)) : `${Math.abs(e.variance)} points`) : "";
@@ -143,7 +146,7 @@ export function describe(item: OutcomeItem, basis: Basis): string {
 export function buildOutcome<R extends OutcomeRow>(rows: R[], basis: Basis, intent: OutcomeIntent): Pick<Outcome<R>, "items" | "notTested" | "summary" | "basis"> {
   const about = rows.filter((r) => {
     if (!samePeriod(intent.period, r.claim.period)) return false;
-    if (!intent.metrics) return r.claim.metric !== "other" && r.claim.metric !== "capex";
+    if (!intent.metrics) return true;
     return intent.metrics.includes(r.claim.metric) || ((r.claim.metric === "other" || r.claim.metric === "capex") && Boolean(intent.term?.test(r.claim.quote)));
   });
   const testable: R[] = [];
@@ -202,15 +205,23 @@ function misstatesResult(text: string, items: OutcomeItem[]): boolean {
 
 export type ExplanationCheck = { ok: true; claims: { text: string; citations: number[] }[] } | { ok: false; reason: string };
 
-/** All or nothing: an explanation that disputes the card can't be trusted by removing the sentence that showed it. */
-export function checkExplanation(a: ModelAnswer, passages: string[], items: OutcomeItem[]): ExplanationCheck {
+/**
+ * All or nothing: an explanation that disputes the card can't be trusted by removing the sentence that showed it.
+ * The first factCount passages are verified results. A filing can't support what management said, so a claim that
+ * also cites a transcript has to stand on the transcript alone.
+ */
+export function checkExplanation(a: ModelAnswer, passages: string[], items: OutcomeItem[], factCount = 0): ExplanationCheck {
   if (a.status === "abstain") return { ok: false, reason: "the passages do not explain it" };
   for (const c of a.claims) {
     if (OWN_VERDICT.test(c.text)) return { ok: false, reason: "it stated a verdict of its own" };
     if (ADVICE.test(c.text)) return { ok: false, reason: "it gave investment advice" };
     if (misstatesResult(c.text, items)) return { ok: false, reason: "it contradicted a filed figure" };
   }
-  const r = checkAnswer(a, passages);
+  const claims = a.claims.map((c) => {
+    const spoken = c.citations.filter((n) => n > factCount);
+    return { ...c, citations: spoken.length ? spoken : c.citations };
+  });
+  const r = checkAnswer({ ...a, claims }, passages);
   if (!r.ok) return { ok: false, reason: r.reason };
   if (r.status !== "answered" || r.removed) return { ok: false, reason: r.status === "answered" ? (r.firstProblem ?? "a claim failed its checks") : "the passages do not explain it" };
   return { ok: true, claims: r.claims };

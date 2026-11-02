@@ -50,6 +50,7 @@ Rules:
 - Explain what management gave as its reasons at the time, what it said the target depended on, and how its language changed between calls. Do not repeat the guided number, filed number or verdict unless a claim needs them.
 - Never say whether guidance was met, missed, beaten or delivered, and never say a result was above or below a target. The verdict is shown separately and is not yours to state.
 - Do not calculate or compare numbers into new ones. A number may appear only if it is written in a passage you cite for that claim. Copy numbers exactly.
+- Give a reason for a target only if the passage ties that reason to that same metric. Calls move through order inflow, revenue, margin and working capital in turn, and a reason given for one does not carry to the next. If no passage links a reason to this metric, say what was stated and give no reason.
 - Do not say why a result differed from guidance unless a passage says so. Management's expectations are not evidence of what later happened.
 - Scope matters. If a passage covers one segment or subsidiary rather than the whole company, name it in the claim.
 - Date every claim from its source, in the past tense: "On the Feb 2026 call, management said...".

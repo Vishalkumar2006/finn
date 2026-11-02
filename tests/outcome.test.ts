@@ -103,7 +103,7 @@ group("Supreme: EBITDA margin that depends on the definition", () => {
     const e = o.items[0].row.evaluation;
     expect(e.status).toBe("insufficient");
     expect(e.range).toEqual({ low: 13.85, high: 14.77, basisTested: "the filed basis" });
-    expect(o.summary[0]).toMatch(/13.85% to 14.77%.*no verdict/);
+    expect(o.summary[0]).toMatch(/13.85% to 14.77%.*FINN gives none/);
     expect(o.summary[0]).not.toMatch(/: missed|: met|: exceeded/);
   });
 });
@@ -120,7 +120,17 @@ group("Bajaj Finance: AUM is not revenue", () => {
   it("gets no verdict when AUM is what was asked", () => {
     const o = buildOutcome(r, "consolidated", ask("Did Bajaj Finance deliver on its FY26 AUM growth guidance?"));
     expect(o.items).toEqual([]);
-    expect(o.summary[0]).toMatch(/none can be compared/);
+    expect(o.summary[0]).toMatch(/statements on AUM for FY26, but none can be compared/);
+  });
+  it("does not collect other lender metrics for an AUM question", () => {
+    const roe = rows(["We expect ROE of 20% to 22% in FY26 for the company."], "2025-10-20", "Oct 2025", series);
+    expect(roe[0].claim.metric).toBe("other");
+    expect(buildOutcome(roe, "consolidated", ask("Did Bajaj Finance deliver on its FY26 AUM guidance?")).notTested).toEqual([]);
+  });
+  it("still says statements exist when no metric was named and none can be tested", () => {
+    const o = buildOutcome(r, "consolidated", ask("Compare management guidance against reported results."));
+    expect(o.items).toEqual([]);
+    expect(o.summary[0]).toMatch(/but none can be compared/);
   });
 });
 
@@ -205,6 +215,12 @@ group("the model's explanation", () => {
   });
   it("refuses a number of its own", () => {
     expect(checkExplanation(say("Management expected execution ramp-up worth 3.21 points.", [2]), passages, items).ok).toBe(false);
+  });
+  it("won't let a filing stand in for what management said", () => {
+    const r = checkExplanation(say("On the Feb 2026 call, management expected a customary ramp-up in project execution during Q4.", [1, 2]), passages, items, 1);
+    expect(r).toMatchObject({ ok: true, claims: [{ citations: [2] }] });
+    // 11.79 is only in the filing passage, so once that citation is dropped the claim has no support.
+    expect(checkExplanation(say("On the Feb 2026 call, management expected a ramp-up in project execution to 11.79.", [1, 2]), passages, items, 1).ok).toBe(false);
   });
   it("refuses investment advice", () => {
     expect(checkExplanation(say("Investors should buy on the project execution ramp-up."), passages, items)).toEqual({ ok: false, reason: "it gave investment advice" });

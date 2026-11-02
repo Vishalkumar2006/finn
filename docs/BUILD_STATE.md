@@ -226,6 +226,10 @@ FINN is installable (manifest, 192/512 and maskable icons, standalone display, F
 | Pages served by the service worker | 0 responses on Brief, Watchlist, Alerts and L&T research |
 | 390 px and 1280 px | No overflow, no page errors |
 | Cron schedule and monitor route | Unchanged; tests assert this |
+| Production, desktop Chrome through the real UI (2 Nov, 18:59 IST) | Turn on gave a device code. After a reload the device was still on with the same code. With no FINN tab open, an authenticated test send got FCM 201, and Chrome recorded the encrypted push received, dispatched and completed. An immediate repeat got 429. Turn off removed the record, and a later send got 404 |
+| Production refusals | Test send without auth or with a wrong secret: 401. GET: 405. Cross-site subscribe: 403. Internal-host endpoint or malformed body: 400. Cron route without secret: still 401 |
+
+On a flaky connection, Turn on once took 37 s and once failed with "Failed to fetch" after a connection reset; the panel showed the error and offered Turn on again. Subscribing through FCM alone took 4.4 s.
 
 Not verified here: whether the notification appears on screen. The automated Chrome used for testing showed no notifications at all, even from a direct `showNotification` call, and Chrome logged its generic fallback. Display and tap navigation must be confirmed on a real phone.
 

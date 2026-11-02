@@ -171,7 +171,7 @@ A production deploy once exited without deploying; it was caught by checking the
 
 ## Monitoring
 
-**Status: scheduled and manually verified, automatic execution pending.** The first automatic run is due between 17:30 and 18:30 IST on 2 Nov 2026. It had not happened when this was written, so no automatic run has been observed.
+**Status: automatic execution verified.** The first unattended run happened at 17:34:28 IST on 2 Nov 2026, inside the 17:30–18:30 window. It was recorded with trigger `cron` and status success: 19 of 19 companies, 34 filings checked, 9 new events, session 2 Nov, finished in 4 s. Vercel's request log independently shows `GET /api/cron/monitor` at 17:34:27 IST returning 200 on the production deployment. No manual run was made that day after 08:38 IST, and nothing was deployed during the window.
 
 Pipeline: Vercel Cron (`0 12 * * *`) calls `/api/cron/monitor`, which needs `CRON_SECRET`. The route reads NSE announcements and Yahoo end-of-day prices directly, classifies and deduplicates, and stores one small JSON document in a private Vercel Blob store (`finn-monitor`, bom1). `/api/monitor` is the public, read-only view, shown in the Daily monitoring section on Alerts.
 
@@ -199,8 +199,7 @@ Pipeline: Vercel Cron (`0 12 * * *`) calls `/api/cron/monitor`, which needs `CRO
 
 Not verified:
 
-- A real Vercel-triggered run. The check for it is "Last automated check" on Alerts, with a time inside the window, plus the logs for `/api/cron/monitor`.
-- That the route labels a Vercel call as automatic. The header it reads is from Vercel's docs. Using "Run" in the Vercel dashboard may be labelled automatic too, so judge by the time.
+- Runs after the first. Hobby gives no retry, so a single missed day shows as stale on Alerts.
 
 Limits: Blob on Hobby is free up to 1 GB, 10,000 simple and 2,000 advanced operations a month. Over that it stops for up to 30 days without charge, and the panel says the record can't be read. Status reads are cached for 60 seconds to stay well inside this. Monitoring does not send push notifications: findings appear when the app is opened.
 
@@ -261,6 +260,5 @@ Each scored claim in the snapshot was read in context, but rules can still misfi
 
 ## Remaining before submission
 
-- Check that the first automatic monitoring run happened (17:30 to 18:30 IST, 2 Nov 2026).
 
 1. Review the AI build history and attach it. Copy kept outside the repo in `C:\Users\vishk\Projects\finn-ai-build-history`.

@@ -1,4 +1,4 @@
-import { BlobNotFoundError, BlobPreconditionFailedError, get, put } from "@vercel/blob";
+import { BlobNotFoundError, BlobPreconditionFailedError, get, head, put } from "@vercel/blob";
 import type { MonitorState } from "../domain/monitor";
 import type { MonitorStore } from "./run";
 
@@ -11,9 +11,12 @@ const PATH = "monitor/state.json";
 export const blobStore: MonitorStore = {
   async read(fresh) {
     try {
+      // A delivered copy's ETag doesn't match for ifMatch, so the version comes from metadata. It is read first: if the
+      // blob changes in between, the write is refused and retried, never applied over newer data.
+      const version = fresh ? (await head(PATH)).etag : "";
       const r = await get(PATH, { access: "private", useCache: !fresh });
       if (!r || r.statusCode !== 200) return null;
-      return { state: (await new Response(r.stream).json()) as MonitorState, etag: r.blob.etag };
+      return { state: (await new Response(r.stream).json()) as MonitorState, etag: version };
     } catch (e) {
       if (e instanceof BlobNotFoundError) return null;
       throw e;

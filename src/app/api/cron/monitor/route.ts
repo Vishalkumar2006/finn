@@ -22,9 +22,9 @@ export async function GET(req: NextRequest) {
     if (r.outcome === "skipped") return NextResponse.json(r);
     console.log(`monitor: ${r.run.trigger} run ${r.run.status}, ${r.run.companiesChecked}/${r.run.companiesExpected} companies, ${r.run.filingsChecked ?? "no"} filings, ${r.run.newEvents} new`);
     return NextResponse.json(r, { status: r.run.status === "failed" ? 502 : 200 });
-  } catch {
-    // The scan could not be recorded. Details stay out of the response and the logs, since storage errors can carry internals.
-    console.error("monitor: state store unavailable");
+  } catch (e) {
+    // The scan could not be recorded. The caller learns nothing more; the log gets the error class and SDK message only.
+    console.error(`monitor: state store unavailable: ${e instanceof Error ? `${e.name}: ${e.message.slice(0, 140)}` : "unknown"}`);
     return NextResponse.json({ error: "Monitoring store unavailable; this scan was not recorded." }, { status: 503 });
   }
 }

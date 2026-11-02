@@ -11,7 +11,7 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, { status, 
  * give the device code shown on that phone. Fails closed without PUSH_ADMIN_SECRET.
  */
 export async function POST(req: NextRequest) {
-  if (!cronAuthorised(req.headers.get("authorization"), process.env.PUSH_ADMIN_SECRET)) return json({ error: "Unauthorized" }, 401);
+  if (!cronAuthorised(req.headers.get("authorization"), process.env.PUSH_ADMIN_SECRET?.trim() || undefined)) return json({ error: "Unauthorized" }, 401);
   const vapid = vapidConfig();
   if (!vapid) return json({ error: "Notifications are not configured." }, 503);
   let b: { device?: unknown; path?: unknown };

@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     if (r.result === "full") return json({ error: "FINN is not accepting more devices right now." }, 503);
     const id = pushId(parsed.endpoint);
     if (r.result === "added") console.log(`push: ${id} subscribed`);
-    return json({ ok: true, device: deviceCode(id) });
+    return json({ ok: true, device: deviceCode(id), daily: !!r.doc.subscriptions.find((s) => s.id === id)?.daily?.on });
   } catch (e) {
     console.error(`push: store unavailable on subscribe: ${e instanceof StoreBusy ? "busy" : e instanceof Error ? e.name : "unknown"}`);
     return json({ error: "Could not save the subscription. Try again." }, 503);

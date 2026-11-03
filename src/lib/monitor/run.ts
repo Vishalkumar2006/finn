@@ -20,7 +20,7 @@ export interface ScanDeps {
   retryDelayMs?: number;
 }
 
-export type ScanResult = { outcome: "skipped"; runningSince: string } | { outcome: "finished"; run: RunRecord };
+export type ScanResult = { outcome: "skipped"; runningSince: string } | { outcome: "finished"; run: RunRecord; added: MonitorEvent[] };
 
 const reason = (e: unknown) => (e instanceof Error ? e.message : "unknown error").slice(0, 160);
 
@@ -94,11 +94,12 @@ export async function runScan(deps: ScanDeps, trigger: Trigger): Promise<ScanRes
     companiesExpected: symbols.length, companiesChecked: read.length, companiesFailed: failed.map((f) => f.symbol), companiesLagging: lagging,
     filingsChecked, windowFrom: from, windowTo: to, latestSession, sessionStatus: sessionStatus(latestSession, now()), newEvents: 0, errors,
   };
-  let added = 0;
+  // Only events this run's own commit added: a re-run or a concurrent run can never claim the same event twice.
+  let added: MonitorEvent[] = [];
   await commit(store, (s) => {
     const r = applyRun(s, run, events, { filings: filingsChecked != null, signals: read.length === symbols.length });
-    added = r.added;
+    added = r.addedEvents;
     return r.state;
   });
-  return { outcome: "finished", run: { ...run, newEvents: added } };
+  return { outcome: "finished", run: { ...run, newEvents: added.length }, added };
 }

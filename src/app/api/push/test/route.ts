@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   if (!cronAuthorised(req.headers.get("authorization"), process.env.PUSH_ADMIN_SECRET?.trim() || undefined)) return json({ error: "Unauthorized" }, 401);
   const vapid = vapidConfig();
   if (!vapid) return json({ error: "Notifications are not configured." }, 503);
-  let b: { device?: unknown; path?: unknown };
+  let b: { device?: unknown; path?: unknown; sample?: unknown };
   try {
     b = JSON.parse((await req.text()).slice(0, 1024));
   } catch {
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   if (claim.result === "absent") return json({ error: "No subscription with that device code." }, 404);
   if (!claim.record) return json({ error: `Rate limited. Try again in ${Math.ceil((claim.wait ?? 0) / 1000)} s.` }, 429);
 
-  const payload = testPayload(b.path, new Date());
+  const payload = testPayload(b.path, new Date(), b.sample === "daily" ? "daily" : undefined);
   const [d] = await deliver([claim.record], payload, vapid);
   if (d.status === "expired") await mutate(blobPushStore, (doc) => remove(doc, id));
   return json({ device: b.device, status: d.status, pushServiceStatus: d.code ?? null, opens: payload.url }, d.status === "sent" ? 200 : 502);

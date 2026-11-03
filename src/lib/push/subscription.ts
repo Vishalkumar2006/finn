@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 /**
  * Browser push subscriptions. An endpoint is a capability URL: whoever holds it (with the keys) can message that
@@ -12,6 +12,8 @@ export interface PushRecord {
   createdAt: string;
   /** Times of admin test sends in the last hour, for the rate limit. */
   tests?: number[];
+  /** Separate consent for automatic daily alerts. Absent means off: test enrolment never implies it. */
+  daily?: { on: boolean; since: string };
 }
 
 export interface PushDoc {
@@ -81,8 +83,17 @@ export interface PushPayload {
   tag: string;
 }
 
-export function testPayload(path: unknown, now: Date): PushPayload {
+export function testPayload(path: unknown, now: Date, sample?: "daily"): PushPayload {
   const time = now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+  // The daily-alert layout with no market content at all, so a test can't be mistaken for a real signal.
+  if (sample === "daily") {
+    return {
+      title: "TEST: FINN daily alert format",
+      body: `TEST sample sent at ${time} IST, not real events. A real alert would count new important filings and unusual EOD moves. Tap to open Alerts.`,
+      url: "/alerts",
+      tag: "finn-test",
+    };
+  }
   return {
     title: "FINN test notification",
     body: `TEST: sent from the FINN server at ${time} IST. Tap to open FINN. No market event triggered this.`,
@@ -116,7 +127,29 @@ export function remove(doc: PushDoc | null, id: string): Change {
   return { doc: { ...doc, subscriptions: doc.subscriptions.filter((r) => r.id !== id) }, changed: true, result: "removed" };
 }
 
-export const TEST_LIMIT = { perHour: 5, minGapMs: 20e3 };
+/**
+ * Changes daily-alert consent. The caller must present this device's endpoint and its auth secret, which only that
+ * browser holds; a device code alone can't change anything.
+ */
+export function setDaily(doc: PushDoc | null, endpoint: string, auth: string, on: boolean, now: Date): Change & { daily?: boolean } {
+  const d = doc ?? { version: 1, subscriptions: [] };
+  const id = pushId(endpoint);
+  const i = d.subscriptions.findIndex((r) => r.id === id);
+  const r = d.subscriptions[i];
+  if (i < 0 || r.endpoint !== endpoint || !sameSecret(r.keys.auth, auth)) return { doc: d, changed: false, result: "absent" };
+  if (!!r.daily?.on === on) return { doc: d, changed: false, result: "exists", daily: on };
+  const subscriptions = d.subscriptions.slice();
+  subscriptions[i] = { ...r, daily: { on, since: now.toISOString() } };
+  return { doc: { ...d, subscriptions }, changed: true, result: "exists", daily: on };
+}
+
+function sameSecret(a: string, b: unknown): boolean {
+  if (typeof b !== "string") return false;
+  const x = createHash("sha256").update(a).digest(), y = createHash("sha256").update(b).digest();
+  return timingSafeEqual(x, y);
+}
+
+export const TEST_LIMIT ={ perHour: 5, minGapMs: 20e3 };
 
 /** Records a test send if the device is under its limit. */
 export function claimTest(doc: PushDoc | null, id: string, now: number): Change & { record?: PushRecord; wait?: number } {

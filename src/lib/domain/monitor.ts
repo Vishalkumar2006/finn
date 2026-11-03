@@ -128,15 +128,16 @@ const KEEP_EVENTS = 800;
 const KEEP_RUNS = 30;
 
 /** Merges one finished run. Safe to repeat: events and runs are keyed, and the earliest detection is kept. */
-export function applyRun(state: MonitorState, run: RunRecord, events: MonitorEvent[], scanned: { filings: boolean; signals: boolean }): { state: MonitorState; added: number } {
+export function applyRun(state: MonitorState, run: RunRecord, events: MonitorEvent[], scanned: { filings: boolean; signals: boolean }): { state: MonitorState; added: number; addedEvents: MonitorEvent[] } {
   const byId = new Map(state.events.map((e) => [e.id, e]));
   const seen = seenFilings(state.events);
-  let added = 0;
+  const addedEvents: MonitorEvent[] = [];
   for (const e of events) {
     if (byId.has(e.id) || (e.seqId && seen.has(e.seqId))) continue;
     byId.set(e.id, e);
-    added++;
+    addedEvents.push(e);
   }
+  const added = addedEvents.length;
   const cutoff = Date.parse(run.startedAt) - KEEP_DAYS * DAY;
   const kept = [...byId.values()]
     .filter((e) => Date.parse(e.detectedAt) >= cutoff)
@@ -146,6 +147,7 @@ export function applyRun(state: MonitorState, run: RunRecord, events: MonitorEve
   const prior = state.runs.filter((r) => r.runId !== run.runId);
   return {
     added,
+    addedEvents,
     state: {
       ...state,
       current: state.current?.runId === run.runId ? null : state.current,

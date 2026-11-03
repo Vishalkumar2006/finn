@@ -29,13 +29,13 @@ const webPushTransport: Transport = async (rec, body, vapid) => {
 };
 
 /**
- * Sends to the given records, a few at a time. 404 and 410 mean the browser dropped the subscription; the caller
- * deletes those. Logs name the short id and status only, never the endpoint or keys.
+ * Sends to every given record, a few at a time; callers batch. 404 and 410 mean the browser dropped the
+ * subscription; the caller deletes those. Logs name the short id and status only, never the endpoint or keys.
  */
 export async function deliver(records: PushRecord[], payload: PushPayload, vapid: VapidConfig, transport: Transport = webPushTransport, concurrency = 4): Promise<Delivery[]> {
   const body = JSON.stringify(payload);
   const out: Delivery[] = [];
-  const queue = records.slice(0, 50);
+  const queue = records.slice();
   const worker = async () => {
     for (let rec = queue.shift(); rec; rec = queue.shift()) {
       // Checked again at send time, so a record that somehow got in can't make the server call an arbitrary host.

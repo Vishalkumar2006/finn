@@ -188,7 +188,7 @@ describe("delivery", () => {
     log.mockRestore();
   });
 
-  it("never calls a host outside the push-service list, bounds concurrency and caps a batch", async () => {
+  it("never calls a host outside the push-service list, bounds concurrency and sends every record it is given", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     let live = 0, peak = 0;
     const called: string[] = [];
@@ -203,7 +203,7 @@ describe("delivery", () => {
     many[0] = rec("https://169.254.169.254/x");
     const out = await deliver(many, payload, vapid, t, 4);
     expect(called).not.toContain("https://169.254.169.254/x");
-    expect(out).toHaveLength(50);
+    expect(out).toHaveLength(80);
     expect(peak).toBeLessThanOrEqual(4);
     vi.restoreAllMocks();
   });
@@ -233,9 +233,9 @@ describe("admin test endpoint", () => {
     expect(route).not.toMatch(/subscriptions\b/);
   });
 
-  it("monitoring is untouched: same schedule, and it never reads or sends push", () => {
+  it("same schedule, and the scan itself never reads or sends push", () => {
     expect(vercel.crons).toEqual([{ path: "/api/cron/monitor", schedule: "0 12 * * *" }]);
-    for (const f of ["src/app/api/cron/monitor/route.ts", "src/lib/monitor/run.ts", "src/lib/monitor/store.ts"]) {
+    for (const f of ["src/lib/monitor/run.ts", "src/lib/monitor/store.ts"]) {
       expect(readFileSync(f, "utf8")).not.toMatch(/lib\/push|web-push|PushRecord|deliver\(/);
     }
   });

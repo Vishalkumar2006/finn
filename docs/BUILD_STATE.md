@@ -231,7 +231,7 @@ FINN is installable (manifest, 192/512 and maskable icons, standalone display, F
 
 On a flaky connection, Turn on once took 37 s and once failed with "Failed to fetch" after a connection reset; the panel showed the error and offered Turn on again. Subscribing through FCM alone took 4.4 s.
 
-The automated Chrome used for testing displays no notifications at all, even from a direct `showNotification` call, so on-screen display is judged on the phone. On 2 Nov the owner confirmed a TEST notification arrived on Android. Tap navigation on the phone has not been confirmed.
+The automated Chrome used for testing displays no notifications at all, even from a direct `showNotification` call, so on-screen display is judged on the phone. On 2 Nov the owner confirmed a TEST notification arrived on Android. On 3 Nov at 14:43 IST, after turning on daily alerts on the phone, the owner confirmed an authenticated TEST daily sample arrived with FINN closed, and that tapping it opened the Alerts page. The device code was unchanged after the toggle, so the stored subscription is the phone's live one.
 
 ### Daily alert delivery (3 Nov)
 

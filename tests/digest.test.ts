@@ -253,7 +253,7 @@ describe("delivery ledger", () => {
   });
 
   it("a claimed device whose result was never recorded (crash) is not sent again", () => {
-    const digest = { runId: "r", createdAt: "x", eventIds: ["f:1"], payload: { title: "t", body: "b", url: "/alerts", tag: "t" } };
+    const digest = { runId: "r", createdAt: new Date().toISOString(), eventIds: ["f:1"], payload: { title: "t", body: "b", url: "/alerts", tag: "t" } };
     const first = claim(null, digest, ["a", "b"], new Date(), 50);
     expect(first.claimed).toEqual(["a", "b"]);
     expect(claim(first.doc, digest, ["a", "b", "c"], new Date(), 50).claimed).toEqual(["c"]);

@@ -6,7 +6,7 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 
 // Only FINN's own screens; anything else opens Alerts. Mirrors safePath() on the server.
 function safePath(path) {
-  if (path === "/" || path === "/alerts") return path;
+  if (path === "/" || path === "/alerts" || path === "/alerts#my-alerts") return path;
   return typeof path === "string" && /^\/research\/[A-Z0-9&-]{1,20}$/.test(path) ? path : "/alerts";
 }
 

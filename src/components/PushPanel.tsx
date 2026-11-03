@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fmtTime } from "@/lib/client";
+import { PersonalMonitor } from "./PersonalMonitor";
 
 type State =
   | { kind: "loading" }
@@ -200,6 +201,7 @@ export function PushPanel() {
       {state.kind === "blocked" && <p className="muted" style={{ marginTop: 8 }}>You blocked notifications for this site. To allow them, open the site settings from the address bar, set Notifications to Allow, then reload.</p>}
       {state.kind === "on" && state.device && <p className="muted" style={{ marginTop: 8 }}>Device code: <span style={{ fontFamily: "var(--mono)" }}>{state.device}</span>. It identifies this subscription for a labelled test send.</p>}
       {error && <p className="muted" role="alert" style={{ marginTop: 8, color: "var(--crit)" }}>{error}</p>}
+      {state.kind === "on" && <PersonalMonitor />}
       <p style={{ fontSize: 13.5, marginTop: 8, color: "var(--ink-2)" }}>
         Daily alerts cover FINN&apos;s shared 19-company demo portfolio at fixed rules (close beyond ±4%, volume above 2×, and important filings).
         Your own portfolio and thresholds are not monitored in the background. Monitoring runs once a day, around 17:30 IST; a notification is sent only

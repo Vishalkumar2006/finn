@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { PersonalConfig } from "./personal";
 
 /**
  * Browser push subscriptions. An endpoint is a capability URL: whoever holds it (with the keys) can message that
@@ -14,6 +15,8 @@ export interface PushRecord {
   tests?: number[];
   /** Separate consent for automatic daily alerts. Absent means off: test enrolment never implies it. */
   daily?: { on: boolean; since: string };
+  /** This device's own background monitoring rules. When on, it replaces the shared daily digest for this device. */
+  personal?: PersonalConfig;
 }
 
 export interface PushDoc {
@@ -72,7 +75,7 @@ export function parseSubscription(body: unknown): Parsed {
 /** Only FINN's own screens. Anything else becomes the Alerts page, so a payload can never send the user off-site. */
 export function safePath(path: unknown): string {
   if (typeof path !== "string") return "/alerts";
-  if (path === "/alerts" || path === "/") return path;
+  if (path === "/alerts" || path === "/" || path === "/alerts#my-alerts") return path;
   return /^\/research\/[A-Z0-9&-]{1,20}$/.test(path) ? path : "/alerts";
 }
 
@@ -143,13 +146,13 @@ export function setDaily(doc: PushDoc | null, endpoint: string, auth: string, on
   return { doc: { ...d, subscriptions }, changed: true, result: "exists", daily: on };
 }
 
-function sameSecret(a: string, b: unknown): boolean {
+export function sameSecret(a: string, b: unknown): boolean {
   if (typeof b !== "string") return false;
   const x = createHash("sha256").update(a).digest(), y = createHash("sha256").update(b).digest();
   return timingSafeEqual(x, y);
 }
 
-export const TEST_LIMIT ={ perHour: 5, minGapMs: 20e3 };
+export const TEST_LIMIT = { perHour: 5, minGapMs: 20e3 };
 
 /** Records a test send if the device is under its limit. */
 export function claimTest(doc: PushDoc | null, id: string, now: number): Change & { record?: PushRecord; wait?: number } {

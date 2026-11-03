@@ -27,6 +27,18 @@ function within<T>(p: Promise<T>): Promise<T> {
   return Promise.race([p, new Promise<never>((_, no) => (t = setTimeout(() => no(new Error(TIMEOUT_NOTE)), TIMEOUT_MS)))]).finally(() => clearTimeout(t));
 }
 
+/**
+ * One browser subscribe at a time. A timed-out attempt keeps running in the browser; a retry must wait for that
+ * same call, or the browser can end up holding a different subscription from the one the server stored.
+ */
+let pendingSubscribe: Promise<PushSubscription> | null = null;
+function subscribeOnce(reg: ServiceWorkerRegistration, key: string): Promise<PushSubscription> {
+  pendingSubscribe ??= reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }).finally(() => {
+    pendingSubscribe = null;
+  });
+  return pendingSubscribe;
+}
+
 /** The worker only shows notifications and handles taps; it has no fetch handler and caches nothing. */
 export function registerWorker(): Promise<ServiceWorkerRegistration> | null {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return null;
@@ -118,9 +130,12 @@ export function PushPanel() {
       }
       const reg = await within(navigator.serviceWorker.ready);
       // Reuses the browser's existing subscription if a previous attempt got that far.
-      const sub = (await reg.pushManager.getSubscription()) ?? (await within(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) })));
+      const sub = (await reg.pushManager.getSubscription()) ?? (await within(subscribeOnce(reg, key)));
       try {
-        const r = await call("/api/push/subscribe", "POST", sub.toJSON());
+        let r = await call("/api/push/subscribe", "POST", sub.toJSON());
+        // If the browser swapped subscriptions meanwhile, store the one it now holds, so the code shown is the live one.
+        const current = await reg.pushManager.getSubscription();
+        if (current && current.endpoint !== sub.endpoint) r = await call("/api/push/subscribe", "POST", current.toJSON());
         setState({ kind: "on", device: r.device ?? null, daily: !!r.daily });
       } catch (e) {
         // Don't leave a browser subscription the server doesn't know about.
@@ -148,8 +163,10 @@ export function PushPanel() {
         setState({ kind: "off" });
         return;
       }
+      // Make sure the server holds the subscription this browser actually has (idempotent), then change consent on it.
+      const reg2 = await call("/api/push/subscribe", "POST", sub.toJSON());
       const r = await call("/api/push/daily", "POST", { endpoint: sub.endpoint, auth: sub.toJSON().keys?.auth, on });
-      setState((s) => (s.kind === "on" ? { ...s, daily: !!r.daily } : s));
+      setState({ kind: "on", device: reg2.device ?? null, daily: !!r.daily });
     });
 
   const status: Record<State["kind"], string> = {

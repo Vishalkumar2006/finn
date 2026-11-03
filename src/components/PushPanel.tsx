@@ -204,7 +204,7 @@ export function PushPanel() {
       {state.kind === "on" && <PersonalMonitor />}
       <p style={{ fontSize: 13.5, marginTop: 8, color: "var(--ink-2)" }}>
         Daily alerts cover FINN&apos;s shared 19-company demo portfolio at fixed rules (close beyond ±4%, volume above 2×, and important filings).
-        Your own portfolio and thresholds are not monitored in the background. Monitoring runs once a day, around 17:30 IST; a notification is sent only
+        To use your own portfolio and thresholds instead, turn on &quot;Monitor my portfolio automatically&quot;. Monitoring runs once a day, around 17:30 IST; a notification is sent only
         when that scan finds something new, at most one per day, and never for earlier events. Turning alerts on doesn&apos;t send anything old.
       </p>
       <p className="muted" style={{ marginTop: 6 }}>

@@ -205,15 +205,15 @@ Limits: Blob on Hobby is free up to 1 GB, 10,000 simple and 2,000 advanced opera
 
 Snapshots are still refreshed by hand: `npm run ingest`, commit, deploy. Research uses the saved analysis for 48 hours after a refresh, then runs live. Nothing commits to the repo automatically.
 
-## Phone notifications (installable app, test push only)
+## Phone notifications
 
-FINN is installable (manifest, 192/512 and maskable icons, standalone display, FINN theme colours) and can receive real Web Push notifications. Delivery is limited to an operator-sent TEST message. Monitoring does not send notifications, and none of the 72 stored events has been or will be pushed.
+FINN is installable (manifest, 192/512 and maskable icons, standalone display, FINN theme colours) and receives real Web Push notifications. On 2 Nov a server-sent TEST notification reached the owner's Android phone with FINN closed. Since 3 Nov, each scheduled scan can also send one daily digest to devices that opted in (below). None of the events stored before then (72 baseline, 9 from the first automatic run) has been or will be pushed.
 
 - **Service worker** (`public/sw.js`): handles push and notification taps only. It has no fetch handler and no cache, so financial data, citations and monitoring status always come from the network as before. It is served with `no-cache`, and an update activates on the next visit.
 - **Opt-in:** permission is requested only when "Turn on" is pressed on Alerts. The panel shows on, off, blocked, unsupported, or unavailable when the server has no keys. A browser that holds a subscription re-registers it on load; the same endpoint is stored once.
 - **Storage:** the same private Blob store as monitoring, but a separate document (`push/subscriptions.json`) that monitoring never reads. Each record holds the endpoint, keys, a creation time and a 12-hex-character id; there is no user agent, IP or account. Writes are conditional on the version read, and losers retry, so simultaneous subscribe and unsubscribe calls both survive. A cap of 500 devices applies. There is no API that returns the list.
 - **Input checks:** an endpoint must be https on a known push service (FCM, Mozilla, Apple, Windows), with no credentials or port, so the server can't be made to fetch any other host. It is checked again at send time. Keys must be a 65-byte P-256 point and a 16-byte secret. Bodies are capped at 4 KB, requests must be same-origin, and each client is limited to 10 a minute.
-- **Sending:** `web-push` produces VAPID-signed, aes128gcm-encrypted messages with an 8 s timeout, TTL of 10 minutes and high urgency. Batches are capped at 50 with 4 sends at a time. A 404 or 410 deletes the subscription. Logs carry the short id and status code only.
+- **Sending:** `web-push` produces VAPID-signed, aes128gcm-encrypted messages with an 8 s timeout, TTL of 10 minutes and high urgency. A 404 or 410 deletes the subscription. Logs carry the short id and status code only.
 - **Test send:** `POST /api/push/test` needs `PUSH_ADMIN_SECRET`, which never reaches the browser. It fails closed without the secret and sends to the single device code shown on that phone. The limit is 5 per hour per device with at least 20 s between sends. It can't broadcast.
 - **Tap:** opens `/alerts` or `/research/{SYMBOL}` on FINN's own origin only, both in the payload check and in the worker. An open FINN window is reused.
 
@@ -231,13 +231,36 @@ FINN is installable (manifest, 192/512 and maskable icons, standalone display, F
 
 On a flaky connection, Turn on once took 37 s and once failed with "Failed to fetch" after a connection reset; the panel showed the error and offered Turn on again. Subscribing through FCM alone took 4.4 s.
 
-Not verified here: whether the notification appears on screen. The automated Chrome used for testing showed no notifications at all, even from a direct `showNotification` call, and Chrome logged its generic fallback. Display and tap navigation must be confirmed on a real phone.
+The automated Chrome used for testing displays no notifications at all, even from a direct `showNotification` call, so on-screen display is judged on the phone. On 2 Nov the owner confirmed a TEST notification arrived on Android. Tap navigation on the phone has not been confirmed.
+
+### Daily alert delivery (3 Nov)
+
+**Status: automatic delivery configured and controlled test verified; real-event delivery pending.** No scheduled scan has run since this was deployed (14:08 IST).
+
+How it runs: the existing cron (`0 12 * * *`, unchanged) calls `/api/cron/monitor`. The scan fetches, classifies and saves exactly as before. Only after that save does `notifyRun` start, inside a separate try/catch. Its result appears as `push` beside the scan in the cron response, plus one log line. A push failure never changes the saved scan, and a failed scan sends nothing.
+
+- **What qualifies:** only events that this run's own commit added to the store. Monitoring already deduplicates by filing number and by company, session and signal, so an event can be added once, by one run. Of those, it must not be baseline, must have been detected at this run's start, must be a filing that isn't routine (critical or notable) or a price or volume signal at the shared ±4% / 2× rule, and its source time must be within 4 days before the scan. That covers a weekend or one missed run, but not a stale filing first seen late. A run with status failed sends nothing. A partial run says so in the text: "Scan incomplete: N of 19 companies read."
+- **Text:** deterministic, from stored events. With one event, it names the company and opens `/research/{SYMBOL}`; with several, it gives counts, for example "2 important filings and 1 unusual EOD move (LT, KEI)", and opens `/alerts`. A quiet day sends nothing.
+- **Consent:** "Daily portfolio alerts" is a separate switch, off for every existing and new device. Changing it needs the device's endpoint and auth secret, which only that browser holds; a device code or another device's endpoint gets 404. A device is eligible only if it opted in before the scan started, so opting in never sends anything old. Turning daily alerts off keeps the subscription. Turning notifications off deletes the subscription, and its consent with it.
+- **Ledger** (`push/deliveries.json`, private, separate from subscriptions and monitoring): one record per run with event ids, the payload, and for each device a status (claimed, sent, failed or expired), time and push-service code. The last 60 runs are kept, and the record survives redeployments.
+- **Policy, at most once:** devices are claimed in batches of 50 by a conditional write before any send, and a claimed device is never sent that run again. Retries, concurrent invocations and redeploys therefore can't duplicate a notification. The cost: if the function dies after a claim but before the send, or a send times out after the phone already got it, that device misses that day's digest. A failed send (5xx or timeout) is recorded as failed and not retried; 404 or 410 deletes the subscription. Delivery is not guaranteed.
+- **Capacity and limits:** batches of 50 with 10 sends at a time and an 8 s timeout per send. No new batch starts after 40 s, so a worst case stays inside the 120 s function limit. At normal push latency, the 500-device cap fits in a few seconds. Any device not reached in time is counted as `notAttempted` and reported as a partial delivery, never skipped silently.
+
+| Check | Result |
+|---|---|
+| 20 new unit tests with injected scans and a mocked transport | One material filing gives one digest opening its company. Routine, baseline, repeated and stale events send nothing, and neither does a failed run. A retried notify sends nothing more. Two simultaneous notifies send 30 devices once each. 120 devices are served in batches, and a time-budget cut-off is reported. Opted-out and late-opt-in devices get nothing. 410 deletes, 503 is recorded as failed and not retried. A crash after a claim isn't resent. A broken ledger leaves the saved scan untouched. No keys means not attempted |
+| Production, desktop Chrome through the real UI (3 Nov, 14:12 IST) | Daily alerts showed Off by default. Toggles with a wrong secret or an unknown device got 404 and stayed Off. The genuine toggle turned On and survived a reload. With FINN closed, the admin TEST daily sample got FCM 201 and Chrome recorded it received, dispatched and completed. Daily Off kept the subscription. Turn off removed it, and a later send got 404 |
+| Turn on after a timeout | Fixed: the button no longer stays busy. It times out at 20 s with retry guidance |
+
+Bug found in production testing and fixed: when Turn on timed out and was retried, the browser could end up holding a different subscription from the one stored. The device code on screen then pointed at a dead address and the daily toggle returned 404. Only one browser subscribe now runs at a time, Turn on stores whatever the browser holds at the end, and the toggle re-registers before changing consent. After the fix, the code shown matched the browser's subscription even after a timed-out first attempt.
+
+Subscriptions left by my own desktop test profiles before the fix may remain in the store with daily alerts off. They receive nothing automatically, and a 404 or 410 on any future send deletes them.
 
 ## Other checks
 
 | Check | Result |
 |---|---|
-| Unit tests, lint, typecheck, build | 238 tests pass (20 for push); others clean |
+| Unit tests, lint, typecheck, build | 258 tests pass (20 for push, 20 for daily alerts); others clean |
 | Commit identity | All commits `Vishalkumar2006 <vishku2004@gmail.com>`, no AI trailers |
 | Secrets in Git history | Pattern scan found none; no env files, logs or PDFs tracked |
 

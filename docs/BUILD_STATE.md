@@ -235,7 +235,7 @@ The automated Chrome used for testing displays no notifications at all, even fro
 
 ### Daily alert delivery (3 Nov)
 
-**Status: automatic delivery configured and controlled test verified; real-event delivery pending.** No scheduled scan has run since this was deployed (14:08 IST).
+**Status: real-event delivery observed.** The scheduled scan on 3 Nov started at 17:34:28 IST (cron, success, 19 of 19 companies, 28 filings, 16 new events). Its digest, "FINN: 11 portfolio signals" opening `/alerts`, went to the one opted-in device (the owner's Android phone, `E567-7B63-E15A`) at 17:34:38 IST, and FCM accepted it with 201. This evidence is from the delivery ledger; the Hobby plan no longer kept the runtime log. Whether it showed on the phone screen is the owner's to confirm.
 
 How it runs: the existing cron (`0 12 * * *`, unchanged) calls `/api/cron/monitor`. The scan fetches, classifies and saves exactly as before. Only after that save does `notifyRun` start, inside a separate try/catch. Its result appears as `push` beside the scan in the cron response, plus one log line. A push failure never changes the saved scan, and a failed scan sends nothing.
 
@@ -256,11 +256,25 @@ Bug found in production testing and fixed: when Turn on timed out and was retrie
 
 Subscriptions left by my own desktop test profiles before the fix may remain in the store with daily alerts off. They receive nothing automatically, and a 404 or 410 on any future send deletes them.
 
+### Personal monitoring (Phase 5, deployed 3 Nov 19:53 IST)
+
+A device with notifications on can turn on "Monitor my portfolio automatically" on Alerts. That saves a server-side snapshot of this browser's companies (up to 25), price and volume thresholds and filing types. It's stored on the device's own subscription record and authenticated by its endpoint and auth secret. The daily scan prices any extra companies once (at most 60 across all devices), then runs each device's rules through the existing `filingEvents` and `signalEvents` code. Each device gets at most one digest. Gemini is not involved. Only events after the rules were saved count, and any change to the rules resets that time, so a change never replays history. The ledger never sends a device the same event twice. A device with personal monitoring gets no shared digest. Missing filings or prices are reported as gaps in the text, never as a quiet day.
+
+**Status:** deployed and checked through the production UI. No scheduled scan has run since the deploy, so automatic personal notification is still pending; the next run (4 Nov, 17:30 IST) is after the submission deadline. The controlled TEST send for a personal match was not run on production: on my machine, the browser subscribe to FCM timed out three times in a row (the app showed its 20 s timeout message each time), and I stopped at the time limit. The match and no-match logic is covered by the unit tests below.
+
+| Check | Result |
+|---|---|
+| 17 unit tests | Device thresholds and categories, routine filings dropped, events before the save time dropped, already-sent events not resent, failed sources reported as gaps, caps, ownership |
+| Production, two separate Chrome profiles (390 px and 1280 px) | A saved TCS/INFY/LT at ±2.5%, 3×, M&A and Results. B saved RELIANCE/HDFCBANK at ±6%, 1.5×, Litigation. Each read back exactly what it saved. A's unsaved local change to ±3.5% showed "changed since they were saved" and the server kept ±2.5%. After A saved, the server had ±3.5% and B was unchanged. Turning A off kept its rules with on=false. No overflow |
+| Production refusals | Unknown endpoint 404, cross-site 403, invalid symbol 400, admin test without a secret 401, cron without a secret 401 |
+| Cleanup | Both test devices removed. Store: 8 devices, none with personal monitoring on, daily alerts on only for the owner's phone |
+
 ## Other checks
 
 | Check | Result |
 |---|---|
-| Unit tests, lint, typecheck, build | 258 tests pass (20 for push, 20 for daily alerts); others clean |
+| Unit tests, lint, typecheck, build | 275 tests pass (20 for push, 20 for daily alerts, 17 for personal monitoring); others clean |
+| Release | Code `8ec7624`, deployment `dpl_9sfvkLmwFzGuvcVx1V8SD1XbdRv8`. Rollback: `dpl_HWXGeMet6N2eeqGzkbt4KsmcWgSG` (`a63022a`) |
 | Commit identity | All commits `Vishalkumar2006 <vishku2004@gmail.com>`, no AI trailers |
 | Secrets in Git history | Pattern scan found none; no env files, logs or PDFs tracked |
 
